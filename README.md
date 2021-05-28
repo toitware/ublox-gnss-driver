@@ -1,2 +1,2 @@
-# Max-M
-Driver for the ublox Max-M series GNSS receivers.
+# UBlox M
+Support for the u-blox M* GNSS receivers.

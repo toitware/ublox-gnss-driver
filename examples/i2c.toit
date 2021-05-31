@@ -5,18 +5,18 @@
 import gpio
 import serial.protocols.i2c as i2c
 
-import ublox_m
+import ublox_gnss
 
 SDA ::= gpio.Pin 21
 SCL ::= gpio.Pin 22
 
 main:
   bus := i2c.Bus --sda=SDA --scl=SCL
-  device := bus.device ublox_m.I2C_ADDRESS
+  device := bus.device ublox_gnss.I2C_ADDRESS
 
-  driver := ublox_m.Driver
-    ublox_m.Reader device
-    ublox_m.Writer device
+  driver := ublox_gnss.Driver
+    ublox_gnss.Reader device
+    ublox_gnss.Writer device
 
   print "getting location"
 

@@ -1,7 +1,7 @@
 prefixes:
   gnss_location: toit-gnss-location
   location: toit-location
-  ublox_m: ..
+  ublox_gnss: ..
   ubx_message: ubx-message
 packages:
   ..:

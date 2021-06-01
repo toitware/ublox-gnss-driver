@@ -27,7 +27,7 @@ class Reader implements reader.Reader:
       sleep WAIT_BEFORE_NEXT_READ_ATTEMPT_
 
   read_ -> ByteArray?:
-    available_bytes ::= registers_.read_u16_be AVAILABLE_BYTES_REGISTER_: 0
+    available_bytes ::= registers_.read_u16_be AVAILABLE_BYTES_REGISTER_
     if available_bytes == 0:
       return null
 

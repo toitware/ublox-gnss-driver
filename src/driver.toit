@@ -126,7 +126,7 @@ class Adapter_:
       if peek == 0xb5: // UBX protocol
         start ::= Time.now
         e := catch: return ubx_message.Message.from_reader reader_
-        log.warn "error parsing ubx messag" --tags={"error": e}
+        log.warn "error parsing ubx message" --tags={"error": e}
       // Go to next byte.
       reader_.skip 1
 

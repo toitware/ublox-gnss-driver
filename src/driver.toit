@@ -29,7 +29,7 @@ class Driver:
   time_to_first_fix_ /Duration := Duration.ZERO
   waiters_ := []
 
-  diagnostics_ /GnssDiagnostics := GnssDiagnostics --known_satellites=0 --satellites_in_view=0 --signal_quality=0.0 --time_to_first_fix=Duration.ZERO
+  diagnostics_ /Diagnostics := Diagnostics --known_satellites=0 --satellites_in_view=0 --signal_quality=0.0 --time_to_first_fix=Duration.ZERO
   location_ /GnssLocation? := null
   adapter_ /Adapter_
   runner_ /Task_? := null
@@ -41,7 +41,7 @@ class Driver:
 
   time_to_first_fix -> Duration: return time_to_first_fix_
 
-  diagnostics -> GnssDiagnostics: return diagnostics_
+  diagnostics -> Diagnostics: return diagnostics_
 
   location -> GnssLocation?:
     return location_
@@ -106,7 +106,7 @@ class Driver:
     satellites_in_view := cnos.reduce --initial=0: | count cno |
       count + (cno > 0 ? 1 : 0)
     known_satellites := satellite_count
-    diagnostics_ = GnssDiagnostics
+    diagnostics_ = Diagnostics
         --time_to_first_fix=time_to_first_fix
         --signal_quality=quality
         --satellites_in_view=satellites_in_view

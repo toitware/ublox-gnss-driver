@@ -5,7 +5,7 @@
 /**
 Diagnostics information for a GNSS receiver.
 */
-class GnssDiagnostics:
+class Diagnostics:
   /**
   The time to first fix.
   0, if no fix has been obtained.

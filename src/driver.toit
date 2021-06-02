@@ -4,6 +4,7 @@
 
 // Driver for Max M8 GPS module.
 
+import .diagnostics
 import gnss_location show GnssLocation
 import location show Location
 import log
@@ -21,11 +22,14 @@ I2C_ADDRESS ::= 0x42
 class Driver:
   static METER_TO_MILLIMETER ::= 1000
   static METER_TO_CENTIMETER ::= 100
-  static COORDINATE_FACTOR/float ::= 10_000_000.0
+  static COORDINATE_FACTOR /float ::= 10_000_000.0
 
-  time_to_first_fix_/Duration := Duration
+  static QUALITY_SAT_COUNT_ ::= 4
+
+  time_to_first_fix_ /Duration := Duration.ZERO
   waiters_ := []
 
+  diagnostics_ /Diagnostics := Diagnostics --known_satellites=0 --satellites_in_view=0 --signal_quality=0.0 --time_to_first_fix=Duration.ZERO
   location_ /GnssLocation? := null
   adapter_ /Adapter_
   runner_ /Task_? := null
@@ -35,7 +39,9 @@ class Driver:
 
     if auto_run: task --background:: run
 
-  time_to_first_fix: return time_to_first_fix_
+  time_to_first_fix -> Duration: return time_to_first_fix_
+
+  diagnostics -> Diagnostics: return diagnostics_
 
   location -> GnssLocation?:
     return location_
@@ -56,6 +62,8 @@ class Driver:
           process_nav_status_ message as ubx_message.NavStatus
         else if message is ubx_message.NavPvt:
           process_nav_pvt_ message as ubx_message.NavPvt
+        else if message is ubx_message.NavSat:
+          process_nav_sat_ message as ubx_message.NavSat
 
   reset:
     adapter_.reset
@@ -82,9 +90,32 @@ class Driver:
       waiters_ = []
       waiters.do: it.set location_
 
+  process_nav_sat_ message/ubx_message.NavSat:
+    cnos ::= []
+    satellite_count ::= message.num_svs
+    satellite_count.repeat: | index |
+      satellite_data ::= message.satellite_data index
+      cnos.add satellite_data.cno
+
+    cnos.sort --in_place: | a b | b - a
+    n ::= min cnos.size QUALITY_SAT_COUNT_
+    sum := 0.0
+    n.repeat: sum += cnos[it]
+    quality ::= sum / QUALITY_SAT_COUNT_
+
+    satellites_in_view := cnos.reduce --initial=0: | count cno |
+      count + (cno > 0 ? 1 : 0)
+    known_satellites := satellite_count
+    diagnostics_ = Diagnostics
+        --time_to_first_fix=time_to_first_fix
+        --signal_quality=quality
+        --satellites_in_view=satellites_in_view
+        --known_satellites=known_satellites
+
   start_periodic_nav_packets_:
     set_message_rate_ ubx_message.Message.NAV ubx_message.NavStatus.ID 1
     set_message_rate_ ubx_message.Message.NAV ubx_message.NavPvt.ID 1
+    set_message_rate_ ubx_message.Message.NAV ubx_message.NavSat.ID 1
 
   set_message_rate_ class_id message_id rate:
     adapter_.send_packet (ubx_message.CfgMsg.message_rate --msg_class=class_id --msg_id=message_id --rate=rate).to_byte_array

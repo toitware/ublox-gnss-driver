@@ -2,14 +2,15 @@
 
 // Driver for Max M8 GPS module.
 
-import monitor
-import serial
-import math
-import reader
-import writer
-import ubx_message
 import gnss_location show GnssLocation
 import location show Location
+import log
+import math
+import monitor
+import reader
+import serial
+import writer
+import ubx_message
 
 import .reader
 
@@ -27,8 +28,8 @@ class Driver:
   adapter_ /Adapter_
   runner_ /Task_? := null
 
-  constructor reader/reader.Reader writer --auto_run/bool=true:
-    adapter_ = Adapter_ reader writer
+  constructor reader/reader.Reader writer logger=log.default --auto_run/bool=true:
+    adapter_ = Adapter_ reader writer logger
 
     if auto_run: task --background:: run
 
@@ -89,11 +90,12 @@ class Driver:
 class Adapter_:
   static STREAM_DELAY_ ::= Duration --ms=1
 
+  logger_/log.Logger
   raw_reader_/reader.Reader
   reader_ /reader.BufferedReader
   writer_ /writer.Writer
 
-  constructor .raw_reader_ raw_writer:
+  constructor .raw_reader_ raw_writer .logger_:
     reader_ = reader.BufferedReader raw_reader_
     writer_ = writer.Writer raw_writer
 
@@ -123,7 +125,8 @@ class Adapter_:
       peek ::= reader_.byte 0
       if peek == 0xb5: // UBX protocol
         start ::= Time.now
-        return ubx_message.Message.from_reader reader_
+        e := catch: return ubx_message.Message.from_reader reader_
+        log.warn e
       // Go to next byte.
       reader_.skip 1
 

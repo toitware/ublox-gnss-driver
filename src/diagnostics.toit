@@ -12,23 +12,14 @@ class Diagnostics:
   */
   time_to_first_fix/Duration
 
-  // TODO(Lau): Detail this measure.
-  /**
-  The signal quality.
-  */
+  /** The signal quality. */
   signal_quality/float
 
-  /**
-  Number of satellites currently in view of the GNSS antenna.
-  */
+  /** Number of satellites currently in view of the GNSS antenna. */
   satellites_in_view/int
 
-  /**
-  Number of satellites currently known by the GNSS receiver.
-  */
+  /** Number of satellites currently known by the GNSS receiver. */
   known_satellites/int
 
-  /**
-  Constructs diagnostics for GNSS.
-  */
+  /** Constructs diagnostics for GNSS. */
   constructor --.time_to_first_fix --.signal_quality --.satellites_in_view --.known_satellites:

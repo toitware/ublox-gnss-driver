@@ -1,2 +1,3 @@
-# UBlox M
-Support for the u-blox M* GNSS receivers.
+# UBlox GNSS
+
+Driver for the u-blox M* GNSS receivers.

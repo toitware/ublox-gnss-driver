@@ -1,6 +1,6 @@
 // Copyright (C) 2021 Toitware ApS. All rights reserved.
-
-// Driver for Max M8 GPS module.
+// Use of this source code is governed by a MIT-style license that can be found
+// in the LICENSE file.
 
 import serial
 import reader
@@ -27,7 +27,7 @@ class Reader implements reader.Reader:
       sleep WAIT_BEFORE_NEXT_READ_ATTEMPT_
 
   read_ -> ByteArray?:
-    available_bytes ::= registers_.read_u16_be AVAILABLE_BYTES_REGISTER_: 0
+    available_bytes ::= registers_.read_u16_be AVAILABLE_BYTES_REGISTER_
     if available_bytes == 0:
       return null
 

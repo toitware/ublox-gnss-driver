@@ -82,7 +82,7 @@ class Driver:
     if message.is_gnss_fix:
       location_ = GnssLocation
         Location message.lat / COORDINATE_FACTOR message.lon / COORDINATE_FACTOR
-        message.height_msl / METER_TO_MILLIMETER
+        message.height_msl.to_float / METER_TO_MILLIMETER
         message.utc_time
         message.horizontal_acc.to_float / METER_TO_MILLIMETER
         message.vertical_acc.to_float / METER_TO_MILLIMETER

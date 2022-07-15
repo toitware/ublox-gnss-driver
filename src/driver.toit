@@ -32,7 +32,8 @@ class Driver:
   diagnostics_ /Diagnostics := Diagnostics --known_satellites=0 --satellites_in_view=0 --signal_quality=0.0 --time_to_first_fix=Duration.ZERO
   location_ /GnssLocation? := null
   adapter_ /Adapter_
-  runner_ /Task_? := null
+  // TODO(florian): this field should be typed as `Task`, but that would break backward compatibility.
+  runner_ /any := null
 
   constructor reader/reader.Reader writer logger=log.default --auto_run/bool=true:
     adapter_ = Adapter_ reader writer logger

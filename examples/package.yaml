@@ -5,6 +5,8 @@ dependencies:
   location:
     url: github.com/toitware/toit-location
     version: ^1.0.0
+  ublox_gnss:
+    path: ..
   ubx_message:
     url: github.com/toitware/ubx-message
     version: ^2.1.2

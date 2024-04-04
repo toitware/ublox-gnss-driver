@@ -16,6 +16,7 @@ import serial
 import ubx_message
 
 import .reader
+import .writer
 
 I2C_ADDRESS ::= 0x42
 
@@ -40,10 +41,12 @@ class Driver:
   The $reader should be an $io.Reader, but $old-reader.Reader objects are
     still supported for backwards compatibility. Support for $old-reader.Reader
     is deprecated and will be removed in a future release.
+  Use $Reader to create an $io.Reader from a $serial.Device.
 
   The $writer should be an $io.Writer, but "old-style" writers are still
     supported for backwards compatibility. Support for "old-style" writers is
     deprecated and will be removed in a future release.
+  Use $Writer to create an $io.Writer from a $serial.Device.
   */
   constructor reader writer logger=log.default --auto_run/bool=true:
     if reader is old-reader.Reader:

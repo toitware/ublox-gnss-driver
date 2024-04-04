@@ -3,13 +3,13 @@
 // in the LICENSE file.
 
 import serial
-import reader
+import io
 
 /**
-Helper class to create a $reader.Reader from a $serial.Device. Can be used when connecting
+Helper class to create an $io.Reader from a $serial.Device. Can be used when connecting
   to the GNSS chip using I2C or SPI.
 */
-class Reader implements reader.Reader:
+class Reader extends io.Reader:
   static WAIT_BEFORE_NEXT_READ_ATTEMPT_ ::= Duration --ms=5
   static MAX_BUFFER_SIZE_               ::= 64 // bytes
   static AVAILABLE_BYTES_REGISTER_      ::= 0xFD
@@ -20,13 +20,13 @@ class Reader implements reader.Reader:
   constructor device/serial.Device:
     registers_ = device.registers
 
-  read -> ByteArray?:
+  read_ -> ByteArray?:
     while true:
-      bytes ::= read_
+      bytes ::= read__
       if bytes: return bytes
       sleep WAIT_BEFORE_NEXT_READ_ATTEMPT_
 
-  read_ -> ByteArray?:
+  read__ -> ByteArray?:
     available_bytes ::= registers_.read_u16_be AVAILABLE_BYTES_REGISTER_
     if available_bytes == 0:
       return null

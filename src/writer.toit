@@ -14,7 +14,7 @@ class Writer extends io.Writer:
 
   constructor .device_:
 
-  try-write_ data/io.Data from/int=0 to/int=data.byte-size:
+  try-write_ data/io.Data from/int=0 to/int=data.byte-size -> int:
     if from != 0 or to != data.byte-size: data = data.byte-slice from to
     if data is ByteArray:
       device_.write (data as ByteArray)

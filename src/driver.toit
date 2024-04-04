@@ -6,13 +6,13 @@
 
 import .diagnostics
 import gnss_location show GnssLocation
+import io
 import location show Location
 import log
 import math
 import monitor
-import reader
+import reader as old-reader
 import serial
-import writer
 import ubx_message
 
 import .reader
@@ -32,10 +32,26 @@ class Driver:
   diagnostics_ /Diagnostics := Diagnostics --known_satellites=0 --satellites_in_view=0 --signal_quality=0.0 --time_to_first_fix=Duration.ZERO
   location_ /GnssLocation? := null
   adapter_ /Adapter_
-  // TODO(florian): this field should be typed as `Task`, but that would break backward compatibility.
-  runner_ /any := null
+  runner_ /Task? := null
 
-  constructor reader/reader.Reader writer logger=log.default --auto_run/bool=true:
+  /**
+  Creates a new driver object.
+
+  The $reader should be an $io.Reader, but $old-reader.Reader objects are
+    still supported for backwards compatibility. Support for $old-reader.Reader
+    is deprecated and will be removed in a future release.
+
+  The $writer should be an $io.Writer, but "old-style" writers are still
+    supported for backwards compatibility. Support for "old-style" writers is
+    deprecated and will be removed in a future release.
+  */
+  constructor reader writer logger=log.default --auto_run/bool=true:
+    if reader is old-reader.Reader:
+      reader = io.Reader.adapt reader
+
+    if writer is not io.Writer:
+      writer = io.Writer.adapt writer
+
     adapter_ = Adapter_ reader writer logger
 
     if auto_run: task --background:: run
@@ -125,13 +141,10 @@ class Adapter_:
   static STREAM_DELAY_ ::= Duration --ms=1
 
   logger_/log.Logger
-  raw_reader_/reader.Reader
-  reader_ /reader.BufferedReader
-  writer_ /writer.Writer
+  reader_/io.Reader
+  writer_/io.Writer
 
-  constructor .raw_reader_ raw_writer .logger_:
-    reader_ = reader.BufferedReader raw_reader_
-    writer_ = writer.Writer raw_writer
+  constructor .reader_ .writer_ .logger_:
 
   flush:
     // Flush all data up to this point.
@@ -156,7 +169,7 @@ class Adapter_:
 
   next_message -> ubx_message.Message:
     while true:
-      peek ::= reader_.byte 0
+      peek ::= reader_.peek-byte 0
       if peek == 0xb5: // UBX protocol
         start ::= Time.now
         e := catch: return ubx_message.Message.from_reader reader_
@@ -166,11 +179,11 @@ class Adapter_:
 
   wait_until_receiver_available_:
     // Block until we can read from the device.
-    first ::= raw_reader_.read
+    first ::= reader_.read
 
     // Consume all data from the device before continuing (without blocking).
     while true:
       e := catch:
         with_timeout --ms=0:
-          raw_reader_.read
+          reader_.read
       if e: return

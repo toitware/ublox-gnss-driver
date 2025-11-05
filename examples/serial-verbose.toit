@@ -28,7 +28,7 @@ main:
   time := ""
   diags := ?
 
-  while location == null:
+  while not location:
     location = driver.location
     diags = driver.diagnostics
     time = "Elapsed: $((Duration --us=(Time.monotonic-us)).in-s)s"

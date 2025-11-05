@@ -19,7 +19,7 @@ main:
 
   print "Getting location"
 
-  // Non-blocking - we return diagnostics whilst a fix is happening
+  // Non-blocking - we return diagnostics whilst a fix is happening.
   location := driver.location
   known := ""
   sats-iv := ""

@@ -5,7 +5,7 @@
 // Driver for Max M8 GPS module.
 
 import .diagnostics
-import gnss_location show GnssLocation
+import gnss-location show GnssLocation
 import io
 import location show Location
 import log
@@ -13,24 +13,24 @@ import math
 import monitor
 import reader as old-reader
 import serial
-import ubx_message
+import ubx-message
 
 import .reader
 import .writer
 
-I2C_ADDRESS ::= 0x42
+I2C-ADDRESS ::= 0x42
 
 class Driver:
-  static METER_TO_MILLIMETER ::= 1000
-  static METER_TO_CENTIMETER ::= 100
-  static COORDINATE_FACTOR /float ::= 10_000_000.0
+  static METER-TO-MILLIMETER ::= 1000
+  static METER-TO-CENTIMETER ::= 100
+  static COORDINATE-FACTOR /float ::= 10_000_000.0
 
-  static QUALITY_SAT_COUNT_ ::= 4
+  static QUALITY-SAT-COUNT_ ::= 4
 
-  time_to_first_fix_ /Duration := Duration.ZERO
+  time-to-first-fix_ /Duration := Duration.ZERO
   waiters_ := []
 
-  diagnostics_ /Diagnostics := Diagnostics --known_satellites=0 --satellites_in_view=0 --signal_quality=0.0 --time_to_first_fix=Duration.ZERO
+  diagnostics_ /Diagnostics := Diagnostics --known-satellites=0 --satellites-in-view=0 --signal-quality=0.0 --time-to-first-fix=Duration.ZERO
   location_ /GnssLocation? := null
   adapter_ /Adapter_
   runner_ /Task? := null
@@ -48,7 +48,7 @@ class Driver:
     deprecated and will be removed in a future release.
   Use $Writer to create an $io.Writer from a $serial.Device.
   */
-  constructor reader writer logger=log.default --auto_run/bool=true:
+  constructor reader writer logger=log.default --auto-run/bool=true:
     if reader is old-reader.Reader:
       reader = io.Reader.adapt reader
 
@@ -57,9 +57,9 @@ class Driver:
 
     adapter_ = Adapter_ reader writer logger
 
-    if auto_run: task --background:: run
+    if auto-run: task --background:: run
 
-  time_to_first_fix -> Duration: return time_to_first_fix_
+  time-to-first-fix -> Duration: return time-to-first-fix_
 
   diagnostics -> Diagnostics: return diagnostics_
 
@@ -74,16 +74,16 @@ class Driver:
   run:
     assert: not runner_
     adapter_.flush
-    start_periodic_nav_packets_
+    start-periodic-nav-packets_
     runner_ = task::
       while true:
-        message := adapter_.next_message
-        if message is ubx_message.NavStatus:
-          process_nav_status_ message as ubx_message.NavStatus
-        else if message is ubx_message.NavPvt:
-          process_nav_pvt_ message as ubx_message.NavPvt
-        else if message is ubx_message.NavSat:
-          process_nav_sat_ message as ubx_message.NavSat
+        message := adapter_.next-message
+        if message is ubx-message.NavStatus:
+          process-nav-status_ message as ubx-message.NavStatus
+        else if message is ubx-message.NavPvt:
+          process-nav-pvt_ message as ubx-message.NavPvt
+        else if message is ubx-message.NavSat:
+          process-nav-sat_ message as ubx-message.NavSat
 
   reset:
     adapter_.reset
@@ -93,55 +93,55 @@ class Driver:
       runner_.cancel
       runner_ = null
 
-  process_nav_status_ message/ubx_message.NavStatus:
-    if time_to_first_fix_.in_ns != 0: return
+  process-nav-status_ message/ubx-message.NavStatus:
+    if time-to-first-fix_.in-ns != 0: return
 
-    time_to_first_fix_ = Duration --ms=message.time_to_first_fix
+    time-to-first-fix_ = Duration --ms=message.time-to-first-fix
 
-  process_nav_pvt_ message/ubx_message.NavPvt:
-    if message.is_gnss_fix:
+  process-nav-pvt_ message/ubx-message.NavPvt:
+    if message.is-gnss-fix:
       location_ = GnssLocation
-        Location message.lat / COORDINATE_FACTOR message.lon / COORDINATE_FACTOR
-        message.height_msl.to_float / METER_TO_MILLIMETER
-        message.utc_time
-        message.horizontal_acc.to_float / METER_TO_MILLIMETER
-        message.vertical_acc.to_float / METER_TO_MILLIMETER
+        Location message.lat / COORDINATE-FACTOR message.lon / COORDINATE-FACTOR
+        message.height-msl.to-float / METER-TO-MILLIMETER
+        message.utc-time
+        message.horizontal-acc.to-float / METER-TO-MILLIMETER
+        message.vertical-acc.to-float / METER-TO-MILLIMETER
       waiters := waiters_
       waiters_ = []
       waiters.do: it.set location_
 
-  process_nav_sat_ message/ubx_message.NavSat:
+  process-nav-sat_ message/ubx-message.NavSat:
     cnos ::= []
-    satellite_count ::= message.num_svs
-    satellite_count.repeat: | index |
-      satellite_data ::= message.satellite_data index
-      cnos.add satellite_data.cno
+    satellite-count ::= message.num-svs
+    satellite-count.repeat: | index |
+      satellite-data ::= message.satellite-data index
+      cnos.add satellite-data.cno
 
-    cnos.sort --in_place: | a b | b - a
-    n ::= min cnos.size QUALITY_SAT_COUNT_
+    cnos.sort --in-place: | a b | b - a
+    n ::= min cnos.size QUALITY-SAT-COUNT_
     sum := 0.0
     n.repeat: sum += cnos[it]
-    quality ::= sum / QUALITY_SAT_COUNT_
+    quality ::= sum / QUALITY-SAT-COUNT_
 
-    satellites_in_view := cnos.reduce --initial=0: | count cno |
+    satellites-in-view := cnos.reduce --initial=0: | count cno |
       count + (cno > 0 ? 1 : 0)
-    known_satellites := satellite_count
+    known-satellites := satellite-count
     diagnostics_ = Diagnostics
-        --time_to_first_fix=time_to_first_fix
-        --signal_quality=quality
-        --satellites_in_view=satellites_in_view
-        --known_satellites=known_satellites
+        --time-to-first-fix=time-to-first-fix
+        --signal-quality=quality
+        --satellites-in-view=satellites-in-view
+        --known-satellites=known-satellites
 
-  start_periodic_nav_packets_:
-    set_message_rate_ ubx_message.Message.NAV ubx_message.NavStatus.ID 1
-    set_message_rate_ ubx_message.Message.NAV ubx_message.NavPvt.ID 1
-    set_message_rate_ ubx_message.Message.NAV ubx_message.NavSat.ID 1
+  start-periodic-nav-packets_:
+    set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
+    set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
+    set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
 
-  set_message_rate_ class_id message_id rate:
-    adapter_.send_packet (ubx_message.CfgMsg.message_rate --msg_class=class_id --msg_id=message_id --rate=rate).to_byte_array
+  set-message-rate_ class-id message-id rate:
+    adapter_.send-packet (ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate).to-byte-array
 
 class Adapter_:
-  static STREAM_DELAY_ ::= Duration --ms=1
+  static STREAM-DELAY_ ::= Duration --ms=1
 
   logger_/log.Logger
   reader_/io.Reader
@@ -151,42 +151,42 @@ class Adapter_:
 
   flush:
     // Flush all data up to this point.
-    wait_until_receiver_available_
+    wait-until-receiver-available_
 
   reset:
-    wait_until_receiver_available_
+    wait-until-receiver-available_
     // Reset and reload configuration (cold boot + reboot of processes).
-    send_packet (ubx_message.CfgRst --reset_mode=1).to_byte_array
+    send-packet (ubx-message.CfgRst --reset-mode=1).to-byte-array
     // Wait for the reload to take effect, before flushing stale data.
     // This was tested with 10ms, so using 50ms.
     sleep --ms=50
     flush
 
-  send_packet bytes/ByteArray:
+  send-packet bytes/ByteArray:
     writer_.write bytes
-    sleep STREAM_DELAY_
+    sleep STREAM-DELAY_
 
-  send_ubx message/ubx_message.Message:
-    writer_.write message.to_byte_array
-    sleep STREAM_DELAY_
+  send-ubx message/ubx-message.Message:
+    writer_.write message.to-byte-array
+    sleep STREAM-DELAY_
 
-  next_message -> ubx_message.Message:
+  next-message -> ubx-message.Message:
     while true:
       peek ::= reader_.peek-byte 0
       if peek == 0xb5: // UBX protocol
         start ::= Time.now
-        e := catch: return ubx_message.Message.from_reader reader_
+        e := catch: return ubx-message.Message.from-reader reader_
         log.warn "error parsing ubx message" --tags={"error": e}
       // Go to next byte.
       reader_.skip 1
 
-  wait_until_receiver_available_:
+  wait-until-receiver-available_:
     // Block until we can read from the device.
     first ::= reader_.read
 
     // Consume all data from the device before continuing (without blocking).
     while true:
       e := catch:
-        with_timeout --ms=0:
+        with-timeout --ms=0:
           reader_.read
       if e: return

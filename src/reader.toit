@@ -10,10 +10,10 @@ Helper class to create an $io.Reader from a $serial.Device. Can be used when con
   to the GNSS chip using I2C or SPI.
 */
 class Reader extends io.Reader:
-  static WAIT_BEFORE_NEXT_READ_ATTEMPT_ ::= Duration --ms=5
-  static MAX_BUFFER_SIZE_               ::= 64 // bytes
-  static AVAILABLE_BYTES_REGISTER_      ::= 0xFD
-  static DATA_STREAM_REGISTER_          ::= 0xFF
+  static WAIT-BEFORE-NEXT-READ-ATTEMPT_ ::= Duration --ms=5
+  static MAX-BUFFER-SIZE_               ::= 64 // bytes
+  static AVAILABLE-BYTES-REGISTER_      ::= 0xFD
+  static DATA-STREAM-REGISTER_          ::= 0xFF
 
   registers_ /serial.Registers
 
@@ -24,13 +24,13 @@ class Reader extends io.Reader:
     while true:
       bytes ::= read__
       if bytes: return bytes
-      sleep WAIT_BEFORE_NEXT_READ_ATTEMPT_
+      sleep WAIT-BEFORE-NEXT-READ-ATTEMPT_
 
   read__ -> ByteArray?:
-    available_bytes ::= registers_.read_u16_be AVAILABLE_BYTES_REGISTER_
-    if available_bytes == 0:
+    available-bytes ::= registers_.read-u16-be AVAILABLE-BYTES-REGISTER_
+    if available-bytes == 0:
       return null
 
-    return registers_.read_bytes
-      DATA_STREAM_REGISTER_
-      min MAX_BUFFER_SIZE_ available_bytes
+    return registers_.read-bytes
+      DATA-STREAM-REGISTER_
+      min MAX-BUFFER-SIZE_ available-bytes

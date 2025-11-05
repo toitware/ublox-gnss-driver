@@ -27,5 +27,6 @@ main:
   while true:
     location := driver.location --blocking
     print "Location: $location ($(max location.horizontal-accuracy location.vertical-accuracy))"
+    sleep --ms=3000
 
   driver.close

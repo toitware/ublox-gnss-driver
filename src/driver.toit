@@ -45,12 +45,21 @@ class Driver:
   static COORDINATE-FACTOR /float ::= 10_000_000.0
   static QUALITY-SAT-COUNT_ ::= 4
 
+  static UBLOX7-HWVERSIONS ::= {
+    "00070000",
+  }
+  static UBLOX6-HWVERSIONS ::= {
+    "00040007",
+  }
+
   time-to-first-fix_/Duration := Duration.ZERO
   last-nav-status-message_/ubx-message.NavStatus? := null
   last-mon-ver-message_/ubx-message.MonVer? := null
   device-protocol-version_/string? := null
   device-hw-version_/string? := null
   device-sw-version_/string? := null
+
+
 
   waiters_ := []
   configs-waiting_ := {:}
@@ -318,22 +327,31 @@ class Driver:
     class wide property, in case the user decides to specify it manually.
   */
   supported-protocol-version message/ubx-message.MonVer -> string:
-    if message.has-extension "PROTVER":
-      // Use extracted value, e.g. 15.00
-      return (message.extensions["PROTVER"]).to-string
-    else if message.sw-version.starts-with "7.":
-      // Assume a u-blox 7
-      return "14.5"
-    else if message.sw-version.starts-with "6.":
-      // Assume a u-blox 6
-      return "14"
-    else if message.sw-version.starts-with "5.":
-      // Assume a u-blox 5
-      return "13.0"
-    else:
-      // Anything older = minimal UBX core
-      return "12.0"
+    // Find an extension containing PROTVER and if exists parse it
+    protver-ext/string? := message.extension "PROTVER"
 
+    if protver-ext != null:
+      // Protver exists, parse it:
+      protver-ext = protver-ext.trim
+      pos-eq/int := protver-ext.index-of "="
+      pos-sp/int := protver-ext.index-of " "
+      if pos-eq > -1:
+        return protver-ext[(pos-eq + 1)..]
+      else if pos-sp > -1:
+        return protver-ext[(pos-sp + 1)..]
+      else:
+        throw "Couldn't parse protver string: '$(protver-ext)'"
+
+    // Make some assumptions if the protver string doesn't exist:
+    if (UBLOX7-HWVERSIONS.any: it == message.hw-version):
+      // Assume a u-blox 7, with no PROTVER
+      return "14.00"
+    else if (UBLOX6-HWVERSIONS.any: it == message.hw-version):
+      // Assume a u-blox 6,, with no PROTVER
+      return "13.00"
+    else:
+      // Anything older = Assume 12. Address later if an issue is raised.
+      return "12.00"
 
   /**
   Sends a subscription for specific message, and the defined rate.

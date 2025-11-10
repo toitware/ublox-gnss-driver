@@ -26,7 +26,7 @@ main:
   if driver.device-version != null:
   print " Hardware Version: $(driver.device-version.hw-version)"
   print " Software Version: $(driver.device-version.sw-version)"
-  driver.device-version.extensions.do:
+  driver.device-version.extensions-raw.do:
     print " - Extension:     $(it)"
 
   print "Getting location"

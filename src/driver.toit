@@ -325,7 +325,7 @@ class Driver:
     protver-ext/string? := message.extension "PROTVER"
 
     if protver-ext != null:
-      // Protver exists, parse it:
+      // Protver exists, parse it.  Some devices delimit by ' ', some devices '=':
       protver-ext = protver-ext.trim
       pos-eq/int := protver-ext.index-of "="
       pos-sp/int := protver-ext.index-of " "
@@ -341,7 +341,7 @@ class Driver:
       // Assume a u-blox 7, with no PROTVER
       return "14.00"
     else if (UBLOX6-HWVERSIONS.any: it == message.hw-version):
-      // Assume a u-blox 6,, with no PROTVER
+      // Assume a u-blox 6, or earlier, if no PROTVER
       return "13.00"
     else:
       // Anything older = Assume 12. Address later if an issue is raised.
@@ -359,7 +359,7 @@ class Driver:
       // Reset the latch
       command-cfg-latch_ = monitor.Latch
 
-      logger_.debug  "Sent request." --tags={"message":"$(message)"}
+      //logger_.debug  "Sent request." --tags={"message":"$(message)"}
       adapter_.send-packet message.to-byte-array
 
       //To do: give a timeout.
@@ -367,7 +367,7 @@ class Driver:
       adapter_.send-packet message.to-byte-array
       response := command-cfg-latch_.get
       duration := Duration --us=(Time.monotonic-us - start)
-      logger_.debug  "Received answer." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+      logger_.debug  "Message Reponse." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
 
       if response is ubx-message.AckAck:
         // logger_.debug  "Acknowledged."
@@ -383,13 +383,13 @@ class Driver:
       // Reset the latch
       command-cfg-latch_ = monitor.Latch
 
-      logger_.debug  "Sent request." --tags={"message":"$(message)"}
+      //logger_.debug  "Sent request." --tags={"message":"$(message)"}
       start := Time.monotonic-us
       adapter_.send-packet message.to-byte-array
       response := command-ver-latch_.get
       duration := Duration --us=(Time.monotonic-us - start)
 
-      logger_.debug  "Received answer." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+      logger_.debug "Message Reponse." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
 
 
 class Adapter_:

@@ -2,25 +2,13 @@
 // Use of this source code is governed by a MIT-style license that can be found
 // in the LICENSE file.
 
-/** To do:
-
-Do we need a tests folder with a few things in? This test failed when I started.
-If we do, I'd suggest this one (create a byte array from a message and then
-convert it back to a message - there was a bug here when I started)
-    message-ba-bef := ?
-    message-ba-bef = (ubx-message.NavStatus.poll).to-byte-array
-    print "TEST BEFORE : $(message-ba-bef)"
-    message-m := ubx-message.Message.from-bytes message-ba-bef
-    message-ba-aft := message-m.to-byte-array
-    print "TEST AFTER  : $(message-ba-aft)"
-    // Eg do an expect to see that they match
-
-*/
-
 /**
 Driver for Ublox GNSS GPS Modules.
 
-  Originally written for a Max M8 GPS module.
+Originally written for a Max M8 GPS module.  Attempts to support this whilst
+  also supporting past and future ublox devices by detecting the device version
+  and using the correct message types for its generation.
+
 */
 
 import .diagnostics
@@ -52,17 +40,19 @@ class Driver:
     "00040007",
   }
 
-  time-to-first-fix_/Duration := Duration.ZERO
+  // store the last recieved message of some message types  (Maybe convert to a map to make it extensible):
   last-nav-status-message_/ubx-message.NavStatus? := null
   last-mon-ver-message_/ubx-message.MonVer? := null
+
+  // fixed properties extracted from messages
+  time-to-first-fix_/Duration := Duration.ZERO
   device-protocol-version_/string? := null
   device-hw-version_/string? := null
   device-sw-version_/string? := null
 
-
-
+  // Lists of latches, for waiting for and acknowledging commands
   waiters_ := []
-  configs-waiting_ := {:}
+  commands_ := {:}
 
   diagnostics_ /Diagnostics := Diagnostics --known-satellites=0 --satellites-in-view=0 --signal-quality=0.0 --time-to-first-fix=Duration.ZERO
   location_ /GnssLocation? := null
@@ -160,7 +150,7 @@ class Driver:
           logger_.debug "Recieved UBX message unknown to the driver." --tags={"message": message.stringify}
 
     // Try and get device type info, before sending anything, including timeout,
-    task:: poll-for-device-info_
+    task:: send-message-deviceinfo-poll_
     sleeptime := 0
     while (device-type_ == "") and (sleeptime < 5000):
       sleeptime += 500
@@ -297,27 +287,27 @@ class Driver:
     generation of messages can be requested.
   */
   start-periodic-nav-packets_ -> none:
-    set-message-rate_ ubx-message.Message.NAV ubx-message.NavTimeUtc.ID 5
+    send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavTimeUtc.ID 5
 
     if device-type_ == "M8":
       logger_.debug "Setting up for M8 device type."
-      set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
-      set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
-      set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
 
     if device-type_ == "6M":
       logger_.debug "Setting up for 6M device type (legacy)."
-      set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
-      set-message-rate_ ubx-message.Message.NAV ubx-message.NavPosLlh.ID 1  // Legacy Equivalent to NavPvt Messages
-      set-message-rate_ ubx-message.Message.NAV ubx-message.NavSvInfo.ID 1  // Legacy Equivalent to NavSat Messages
-      set-message-rate_ ubx-message.Message.NAV ubx-message.NavSol.ID 1     // Legacy to help replace NavSat Messages
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPosLlh.ID 1  // Legacy Equivalent to NavPvt Messages
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSvInfo.ID 1  // Legacy Equivalent to NavSat Messages
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSol.ID 1     // Legacy to help replace NavSat Messages
 
     else:
       // Assume all others are M8 or later (for now):
       logger_.debug "Defaulting to M8 Device Type."
-      set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
-      set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
-      set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
 
   /**
   Determines the protocol version supported by the device.
@@ -359,21 +349,17 @@ class Driver:
   Constructs (and sends) a UBX-CFG message asking for the specified class-id/
     message-id message type, at the specifid rate
   */
-  set-message-rate_ class-id message-id rate:
-    adapter_.send-packet (ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate).to-byte-array
-
-    // Information for logging only
-    class-id-text := ubx-message.Message.PACK-CLASSES[class-id]
-    message-id-text := ubx-message.Message.PACK-MESSAGE-TYPES[class-id][message-id]
-    logger_.debug "Sending message rate command." --tags={"class": class-id-text, "message": message-id-text, "rate": rate}
-
+  send-set-message-rate_ class-id message-id rate:
+    message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
+    adapter_.send-packet message.to-byte-array
+    latch := monitor.Latch
+    commands_[message.cls] = latch
   /**
   Sends a request for device information, using UBX-MON-VER message
   */
-  poll-for-device-info_:
+  send-message-deviceinfo-poll_:
     logger_.debug "Requesting device information."
     adapter_.send-packet (ubx-message.MonVer.poll).to-byte-array
-
 
 
 class Adapter_:

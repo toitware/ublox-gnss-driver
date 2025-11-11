@@ -195,7 +195,7 @@ class Driver:
     //logger_.debug "Received AckAck message." --tags={"class": message.class-id-text , "message": message.message-id-text}
 
   process-nav-status_ message/ubx-message.NavStatus:
-    //logger_.debug "Received NavStatus message." --tags={"gps-fix": message.gps-fix-text, "gps-fix": message.gps-fix-text}
+    logger_.debug "Received NavStatus message." --tags={"gps-fix": message.gps-fix-text, "gps-fix": message.gps-fix-text}
 
     // Cache last status message
     last-nav-status-message_ = message
@@ -204,17 +204,17 @@ class Driver:
     time-to-first-fix_ = (Duration --ms=message.time-to-first-fix)
 
   process-nav-posllh_ message/ubx-message.NavPosLlh:
-    //logger_.debug "Received NavPosLlh message." --tags={"latitude" : message.latitude-deg , "longtitude" : message.longitude-deg, "itow": message.itow }
+    logger_.debug "Received NavPosLlh message." --tags={"latitude" : message.latitude-deg , "longtitude" : message.longitude-deg, "itow": message.itow }
 
   process-nav-time-utc_ message/ubx-message.NavTimeUtc:
-    //logger_.debug "Received NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
+    logger_.debug "Received NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
 
   process-nav-sol_ message/ubx-message.NavSol:
-    //logger_.debug "Received NavSol message." --tags={"position-dop" : message.position-dop} // , "longtitude" : message.latitude-deg, "itow": message.itow }
+    logger_.debug "Received NavSol message." --tags={"position-dop" : message.position-dop} // , "longtitude" : message.latitude-deg, "itow": message.itow }
 
 
   process-nav-pvt_ message/ubx-message.NavPvt:
-    //logger_.debug "Received NavPvt message."
+    logger_.debug "Received NavPvt message."
 
     if message.is-gnss-fix:
       location_ = GnssLocation
@@ -229,7 +229,7 @@ class Driver:
 
   /** Function processes legacy (<=7M) satellite information messages */
   process-nav-svinfo_ message/ubx-message.NavSvInfo:
-    //logger_.debug "Received NavSvInfo message." --tags={"satellite-count" : message.satellite-count}
+    logger_.debug "Received NavSvInfo message." --tags={"satellite-count" : message.satellite-count}
 
     cnos ::= []
     satellite-count ::= message.satellite-count

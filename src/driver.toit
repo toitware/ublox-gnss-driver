@@ -21,6 +21,7 @@ import monitor
 import reader as old-reader
 import serial
 import ubx-message
+import monitor
 
 import .reader
 import .writer
@@ -50,17 +51,17 @@ class Driver:
   device-hw-version_/string? := null
   device-sw-version_/string? := null
 
-  // Lists of latches, for waiting for and acknowledging commands
+  // Latches/Mutexes for managing and acknowledging commands
   waiters_ := []
-  commands_ := {:}
+  command-mutex_ := monitor.Mutex    // Used to ensure one command at once
+  command-ver-latch_ := monitor.Latch    // Used to ensure mutex gets the result
+  command-cfg-latch_ := monitor.Latch    // Used to ensure mutex gets the result
 
   diagnostics_ /Diagnostics := Diagnostics --known-satellites=0 --satellites-in-view=0 --signal-quality=0.0 --time-to-first-fix=Duration.ZERO
   location_ /GnssLocation? := null
   adapter_ /Adapter_
   runner_ /Task? := null
   logger_/log.Logger := ?
-
-  device-type_/string := ?
 
   /**
   Creates a new driver object.
@@ -86,11 +87,9 @@ class Driver:
 
     adapter_ = Adapter_ reader writer logger
 
-    // Default device type (unspecified) now try to get it
-    device-type_ = ""
-    sleep --ms=250
-
-    if auto-run: task --background:: run
+    //.run already puts runner task in the background
+    //if auto-run: task --background:: run
+    if auto-run: run
 
   time-to-first-fix -> Duration: return time-to-first-fix_
 
@@ -149,14 +148,10 @@ class Driver:
         else:
           logger_.debug "Recieved UBX message unknown to the driver." --tags={"message": message.stringify}
 
-    // Try and get device type info, before sending anything, including timeout,
-    task:: send-message-deviceinfo-poll_
-    sleeptime := 0
-    while (device-type_ == "") and (sleeptime < 5000):
-      sleeptime += 500
-      sleep --ms=500
+    // Try and get device type info, before sending anything.
+    send-message-deviceinfo-poll_
 
-    // With the device type determined, tell the device what we want to see.
+    // With the device type determined and parsed, configure the device.
     task:: start-periodic-nav-packets_
 
   reset:
@@ -179,25 +174,29 @@ class Driver:
 
 
   process-mon-ver_ message/ubx-message.MonVer:
+    //logger_.debug "Recieved MonVer message." --tags={"sw-ver": device-sw-version_, "hw-ver": device-hw-version_, "prot-ver": device-protocol-version_}
+
     // Interprets information for the driver/users
     device-hw-version_ = message.hw-version
     device-sw-version_ = message.sw-version
     device-protocol-version_ = supported-protocol-version message
 
-    // Cache last status message
-    logger_.debug "Recieved MonVer message." --tags={"sw-ver": device-sw-version_, "hw-ver": device-hw-version_, "prot-ver": device-protocol-version_}
+    // If a command was waiting for the response, pass it
+    command-ver-latch_.set message
 
     // Cache ubx-mon-ver message for later queries
     last-mon-ver-message_ = message
 
   process-ack-nak-message_ message/ubx-message.AckNak:
-    logger_.debug "Recieved AckNak message." --tags={"class": message.class-id-text , "message": message.message-id-text}
+    command-cfg-latch_.set message
+    //logger_.debug "Recieved AckNak message." --tags={"class": message.class-id-text , "message": message.message-id-text}
 
   process-ack-ack-message_ message/ubx-message.AckAck:
-    logger_.debug "Recieved AckAck message." --tags={"class": message.class-id-text , "message": message.message-id-text}
+    command-cfg-latch_.set message
+    //logger_.debug "Recieved AckAck message." --tags={"class": message.class-id-text , "message": message.message-id-text}
 
   process-nav-status_ message/ubx-message.NavStatus:
-    logger_.debug "Recieved NavStatus message." --tags={"gps-fix": message.gps-fix-text, "gps-fix": message.gps-fix-text}
+    //logger_.debug "Recieved NavStatus message." --tags={"gps-fix": message.gps-fix-text, "gps-fix": message.gps-fix-text}
 
     // Cache last status message
     last-nav-status-message_ = message
@@ -206,18 +205,17 @@ class Driver:
     time-to-first-fix_ = (Duration --ms=message.time-to-first-fix)
 
   process-nav-posllh_ message/ubx-message.NavPosLlh:
-    logger_.debug "Recieved NavPosLlh message." --tags={"latitude" : message.latitude-deg , "longtitude" : message.longitude-deg, "itow": message.itow }
+    //logger_.debug "Recieved NavPosLlh message." --tags={"latitude" : message.latitude-deg , "longtitude" : message.longitude-deg, "itow": message.itow }
 
   process-nav-time-utc_ message/ubx-message.NavTimeUtc:
-    logger_.debug "Recieved NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
+    //logger_.debug "Recieved NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
 
   process-nav-sol_ message/ubx-message.NavSol:
-    logger_.debug "Recieved NavSol message." --tags={"position-dop" : message.position-dop} // , "longtitude" : message.latitude-deg, "itow": message.itow }
+    //logger_.debug "Recieved NavSol message." --tags={"position-dop" : message.position-dop} // , "longtitude" : message.latitude-deg, "itow": message.itow }
 
-    //if message.is-gnss-fix:
 
   process-nav-pvt_ message/ubx-message.NavPvt:
-    logger_.debug "Recieved NavPvt message."
+    //logger_.debug "Recieved NavPvt message."
 
     if message.is-gnss-fix:
       location_ = GnssLocation
@@ -232,7 +230,7 @@ class Driver:
 
   /** Function processes legacy (<=7M) satellite information messages */
   process-nav-svinfo_ message/ubx-message.NavSvInfo:
-    logger_.debug "Recieved NavSvInfo message." --tags={"satellite-count" : message.satellite-count}
+    //logger_.debug "Recieved NavSvInfo message." --tags={"satellite-count" : message.satellite-count}
 
     cnos ::= []
     satellite-count ::= message.satellite-count
@@ -289,14 +287,21 @@ class Driver:
   start-periodic-nav-packets_ -> none:
     send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavTimeUtc.ID 5
 
-    if device-type_ == "M8":
+    if (float.parse device-protocol-version_) >= 15.0 :
       logger_.debug "Setting up for M8 device type."
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
 
-    if device-type_ == "6M":
-      logger_.debug "Setting up for 6M device type (legacy)."
+    else if (float.parse device-protocol-version_) >= 14.0:
+      logger_.debug "Setting up for 7M device type (legacy)."
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPosLlh.ID 1  // Legacy Equivalent to NavPvt Messages
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSvInfo.ID 1  // Legacy Equivalent to NavSat Messages
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSol.ID 1     // Legacy to help replace NavSat Messages
+
+    else if (float.parse device-protocol-version_) >= 13.0:
+      logger_.debug "Setting up for 7M device type (legacy)."
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPosLlh.ID 1  // Legacy Equivalent to NavPvt Messages
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSvInfo.ID 1  // Legacy Equivalent to NavSat Messages
@@ -351,15 +356,41 @@ class Driver:
   */
   send-set-message-rate_ class-id message-id rate:
     message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
-    adapter_.send-packet message.to-byte-array
-    latch := monitor.Latch
-    commands_[message.cls] = latch
+    command-mutex_.do:
+      // Reset the latch
+      command-cfg-latch_ = monitor.Latch
+
+      logger_.debug  "Sent request." --tags={"message":"$(message)"}
+      adapter_.send-packet message.to-byte-array
+
+      //To do: give a timeout.
+      start := Time.monotonic-us
+      adapter_.send-packet message.to-byte-array
+      response := command-cfg-latch_.get
+      duration := Duration --us=(Time.monotonic-us - start)
+      logger_.debug  "Recieved answer." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+
+      if response is ubx-message.AckAck:
+        // logger_.debug  "Acknowledged."
+      if response is ubx-message.AckNak:
+        logger_.debug  "NEGATIVE acknowledged."
+
   /**
   Sends a request for device information, using UBX-MON-VER message
   */
   send-message-deviceinfo-poll_:
-    logger_.debug "Requesting device information."
-    adapter_.send-packet (ubx-message.MonVer.poll).to-byte-array
+    message := ubx-message.MonVer.poll
+    command-mutex_.do:
+      // Reset the latch
+      command-cfg-latch_ = monitor.Latch
+
+      logger_.debug  "Sent request." --tags={"message":"$(message)"}
+      start := Time.monotonic-us
+      adapter_.send-packet message.to-byte-array
+      response := command-ver-latch_.get
+      duration := Duration --us=(Time.monotonic-us - start)
+
+      logger_.debug  "Recieved answer." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
 
 
 class Adapter_:

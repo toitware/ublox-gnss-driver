@@ -18,18 +18,13 @@ main:
   driver := ublox-gnss.Driver port.in port.out
 
   sleeptime := 0
-  print "Getting Device Information:"
-  while (driver.device-version == null) and (sleeptime < 5000):
-    sleeptime += 500
-    sleep --ms=500
-
   if driver.device-version != null:
   print " Hardware Version: $(driver.device-version.hw-version)"
   print " Software Version: $(driver.device-version.sw-version)"
   driver.device-version.extensions-raw.do:
     print " - Extension:     $(it)"
 
-  print "Getting location"
+  //print "Getting location"
   // Non-blocking - we return diagnostics whilst a fix is happening.
   location := driver.location
   known := ""
@@ -51,7 +46,7 @@ main:
     if driver.device-status != null:
       fixtype = "Fix: $(driver.device-status.gps-fix-text)"
 
-    print " $time \t $fixtype $known $sats-iv $sig-q $ttff"
+    //print " $time \t $fixtype $known $sats-iv $sig-q $ttff"
     sleep --ms=3000
 
   print

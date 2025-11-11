@@ -11,7 +11,10 @@ Originally written for a Max M8 GPS module.  Attempts to support this whilst
 
 */
 
+// Not sure if this one is useful, or if it needs adjusting with more relevant things
+// ...left it as it for now and made use of it.
 import .diagnostics
+
 import gnss-location show GnssLocation
 import io
 import location show Location
@@ -25,6 +28,9 @@ import monitor
 
 import .reader
 import .writer
+
+//import semver - Will finish semver then use it.  Using Float to allow the
+// code to run, see $start-periodic-nav-packets_
 
 I2C-ADDRESS ::= 0x42
 

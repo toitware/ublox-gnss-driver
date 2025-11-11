@@ -46,7 +46,7 @@ main:
     if driver.device-status != null:
       fixtype = "Fix: $(driver.device-status.gps-fix-text)"
 
-    //print " $time \t $fixtype $known $sats-iv $sig-q $ttff"
+    print " $time \t $fixtype $known $sats-iv $sig-q $ttff"
     sleep --ms=3000
 
   print

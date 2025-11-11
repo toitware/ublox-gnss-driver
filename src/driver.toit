@@ -41,7 +41,7 @@ class Driver:
     "00040007",
   }
 
-  // store the last recieved message of some message types  (Maybe convert to a map to make it extensible):
+  // store the last received message of some message types  (Maybe convert to a map to make it extensible):
   last-nav-status-message_/ubx-message.NavStatus? := null
   last-mon-ver-message_/ubx-message.MonVer? := null
 
@@ -115,11 +115,18 @@ class Driver:
 
         if message is ubx-message.AckAck:
           // Message is an ACK-ACK - positive response.
+          command-cfg-latch_.set (message as ubx-message.AckAck)
           process-ack-ack-message_ message as ubx-message.AckAck
 
         else if message is ubx-message.AckNak:
-          // Message is an ACK-NACK - negative response.  A command sent didn't work.
+          // Message is an ACK-NACK - negative response. (A command sent didn't work.)
+          command-cfg-latch_.set (message as ubx-message.AckNak)
           process-ack-nak-message_ message as ubx-message.AckNak
+
+        else if message is ubx-message.MonVer:
+          // If a command was waiting for the response, pass it
+          command-ver-latch_.set (message as ubx-message.MonVer)
+          process-mon-ver_ message as ubx-message.MonVer
 
         else if message is ubx-message.NavStatus:
           process-nav-status_ message as ubx-message.NavStatus
@@ -129,9 +136,6 @@ class Driver:
 
         else if message is ubx-message.NavSat:
           process-nav-sat_ message as ubx-message.NavSat
-
-        else if message is ubx-message.MonVer:
-          process-mon-ver_ message as ubx-message.MonVer
 
         else if message is ubx-message.NavPosLlh:
           process-nav-posllh_ message as ubx-message.NavPosLlh
@@ -146,7 +150,7 @@ class Driver:
           process-nav-time-utc_ message as ubx-message.NavTimeUtc
 
         else:
-          logger_.debug "Recieved UBX message unknown to the driver." --tags={"message": message.stringify}
+          logger_.debug "Received UBX message unknown to the driver." --tags={"message": message.stringify}
 
     // Try and get device type info, before sending anything.
     send-message-deviceinfo-poll_
@@ -174,29 +178,24 @@ class Driver:
 
 
   process-mon-ver_ message/ubx-message.MonVer:
-    //logger_.debug "Recieved MonVer message." --tags={"sw-ver": device-sw-version_, "hw-ver": device-hw-version_, "prot-ver": device-protocol-version_}
+    //logger_.debug "Received MonVer message." --tags={"sw-ver": device-sw-version_, "hw-ver": device-hw-version_, "prot-ver": device-protocol-version_}
 
     // Interprets information for the driver/users
     device-hw-version_ = message.hw-version
     device-sw-version_ = message.sw-version
     device-protocol-version_ = supported-protocol-version message
 
-    // If a command was waiting for the response, pass it
-    command-ver-latch_.set message
-
     // Cache ubx-mon-ver message for later queries
     last-mon-ver-message_ = message
 
   process-ack-nak-message_ message/ubx-message.AckNak:
-    command-cfg-latch_.set message
-    //logger_.debug "Recieved AckNak message." --tags={"class": message.class-id-text , "message": message.message-id-text}
+    //logger_.debug "Received AckNak message." --tags={"class": message.class-id-text , "message": message.message-id-text}
 
   process-ack-ack-message_ message/ubx-message.AckAck:
-    command-cfg-latch_.set message
-    //logger_.debug "Recieved AckAck message." --tags={"class": message.class-id-text , "message": message.message-id-text}
+    //logger_.debug "Received AckAck message." --tags={"class": message.class-id-text , "message": message.message-id-text}
 
   process-nav-status_ message/ubx-message.NavStatus:
-    //logger_.debug "Recieved NavStatus message." --tags={"gps-fix": message.gps-fix-text, "gps-fix": message.gps-fix-text}
+    //logger_.debug "Received NavStatus message." --tags={"gps-fix": message.gps-fix-text, "gps-fix": message.gps-fix-text}
 
     // Cache last status message
     last-nav-status-message_ = message
@@ -205,17 +204,17 @@ class Driver:
     time-to-first-fix_ = (Duration --ms=message.time-to-first-fix)
 
   process-nav-posllh_ message/ubx-message.NavPosLlh:
-    //logger_.debug "Recieved NavPosLlh message." --tags={"latitude" : message.latitude-deg , "longtitude" : message.longitude-deg, "itow": message.itow }
+    //logger_.debug "Received NavPosLlh message." --tags={"latitude" : message.latitude-deg , "longtitude" : message.longitude-deg, "itow": message.itow }
 
   process-nav-time-utc_ message/ubx-message.NavTimeUtc:
-    //logger_.debug "Recieved NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
+    //logger_.debug "Received NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
 
   process-nav-sol_ message/ubx-message.NavSol:
-    //logger_.debug "Recieved NavSol message." --tags={"position-dop" : message.position-dop} // , "longtitude" : message.latitude-deg, "itow": message.itow }
+    //logger_.debug "Received NavSol message." --tags={"position-dop" : message.position-dop} // , "longtitude" : message.latitude-deg, "itow": message.itow }
 
 
   process-nav-pvt_ message/ubx-message.NavPvt:
-    //logger_.debug "Recieved NavPvt message."
+    //logger_.debug "Received NavPvt message."
 
     if message.is-gnss-fix:
       location_ = GnssLocation
@@ -230,7 +229,7 @@ class Driver:
 
   /** Function processes legacy (<=7M) satellite information messages */
   process-nav-svinfo_ message/ubx-message.NavSvInfo:
-    //logger_.debug "Recieved NavSvInfo message." --tags={"satellite-count" : message.satellite-count}
+    //logger_.debug "Received NavSvInfo message." --tags={"satellite-count" : message.satellite-count}
 
     cnos ::= []
     satellite-count ::= message.satellite-count
@@ -255,7 +254,7 @@ class Driver:
 
   /** Function processes legacy (M8+) satellite information messages */
   process-nav-sat_ message/ubx-message.NavSat:
-    logger_.debug "Recieved NavSat message." --tags={"satellite-count" : message.satellite-count}
+    logger_.debug "Received NavSat message." --tags={"satellite-count" : message.satellite-count}
 
     cnos ::= []
     satellite-count ::= message.num-svs
@@ -368,7 +367,7 @@ class Driver:
       adapter_.send-packet message.to-byte-array
       response := command-cfg-latch_.get
       duration := Duration --us=(Time.monotonic-us - start)
-      logger_.debug  "Recieved answer." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+      logger_.debug  "Received answer." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
 
       if response is ubx-message.AckAck:
         // logger_.debug  "Acknowledged."
@@ -390,7 +389,7 @@ class Driver:
       response := command-ver-latch_.get
       duration := Duration --us=(Time.monotonic-us - start)
 
-      logger_.debug  "Recieved answer." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+      logger_.debug  "Received answer." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
 
 
 class Adapter_:

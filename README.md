@@ -102,7 +102,7 @@ precise timing reference.
 
 #### Method 2: Averaging method
 When `UBX-NAV-TIMEUTC` messages are received, they are first checked for
-validity (when `.valid-utc=true`).  If valid, the driver immediately measures
+validity (eg `.valid-utc=true`).  If valid, the driver immediately measures
 the time offset between the time message and the local system time.  As these
 messages are continually received, a moving average is calculated with them in
 order to smooth out time differences/delays of local processing.  This average is exposed via the driver, and with that the system time can be set, as shown:

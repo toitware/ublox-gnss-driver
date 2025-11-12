@@ -66,10 +66,11 @@ port = uart.Port --tx=TX-PIN --rx=RX-PIN --baud-rate=TARGET-BAUD
 driver = ublox-gnss.Driver port.in port.out
 ```
 > [!TIP]
-> If debugging and rerunning the code over and over, the device may stay at the
-> higher speed from the previous run.  If your code starts with the assumption
-> of a specific speed, unless the device has been power-reset, it may still
-> be operating as configured during the previous code execution.
+> If debugging and rerunning code repeatedly without power resets in between,
+> the device may stay at the higher speed from the previous run.  If your code
+> starts with the assumption of a specific speed, unless the device has been
+> power-reset, it may still be operating as configured during the previous code
+> execution.
 
 ### Getting time synchronisation from GPS
 This is best done using the a provided pin. Some modules do not expose this pin

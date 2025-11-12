@@ -7,12 +7,14 @@ location.  If used as per the examples, this driver will continually update a
 'location' object, which can be queried as required.
 
 #### Advanced use cases
-There are other features and information that these devices can provide - much
-of this information is available inside the 'messages' that the devices send.
-The 'Advanced examples' below shows how to have the device collect information
-from any of the supported message types.  The information they can provide is
-vast.  It is up to the user to look at the device manual and determine which
-messages are required, and to use driver to ask for them.
+There are other features and information that these devices can provide.
+Accessing it is based on sending messages to and from the device.  The 'Advanced
+examples' below shows how to use the mesage system via this driver to collect
+information from any of the supported message types of your device.  The
+information they can provide is vast, and not all types may have human readable
+output.  It is up to the user to look at the device manual and determine which
+messages are required, how to interpret the data, and to use driver to ask for
+it.
 
 ## Interface Support
 | Interface | Support |

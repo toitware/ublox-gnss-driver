@@ -1,6 +1,19 @@
 # UBlox GNSS
 Driver for the u-blox M* GNSS receivers.
 
+## How to use
+This driver was written initially with one purpose in mind: to return the device
+location.  If used as per the examples, this driver will continually update a
+'location' object, which can be queried as required.
+
+#### Advanced use cases
+There are other features and information that these devices can provide - much
+of this information is available inside the 'messages' that the devices send.
+The 'Advanced examples' below shows how to have the device collect information
+from any of the supported message types.  The information they can provide is
+vast.  It is up to the user to look at the device manual and determine which
+messages are required, and to use driver to ask for them.
+
 ## Interface Support
 | Interface | Support |
 |-|-|
@@ -92,7 +105,7 @@ messages are continually received, a moving average is calculated with them in
 order to smooth out time differences/delays of local processing.  This average is exposed via the driver, and with that the system time can be set, as shown:
 ```Toit
 //todo: complete this example
-// Idea - First, clean up serial, increase speed, disable chatty NMEA messages.
+// Idea - First, clean up serial, increase speed[done], disable chatty NMEA messages[done].
 // When time is valid, obtain accuracy, and a smart allowance for serialisation
 // time.
 

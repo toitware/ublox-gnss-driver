@@ -110,7 +110,7 @@ order to smooth out time differences/delays of local processing.  This average i
 //todo: complete this example
 // Idea - First, clean up serial, increase speed[done], disable chatty NMEA messages[done].
 // When time is valid, obtain accuracy, and a smart allowance for serialisation
-// time.
+// time.  Calculate a time asdjustment and let the user set their time if necessary.
 
 
 

@@ -52,8 +52,8 @@ open protocols, which will be developed as needed.
 
 ### Switch UART to different baud rate
 Whilst the serial driver is established at a specific speed, both the
-device/driver needs to be set using the old speed to the required speed.  Then
-reconnecting the uart at the new speed is required.
+device/driver needs to be set to the required speed **using the old speed**.
+Once done, reconnect the uart at the new speed.
 ```Toit
 START-BAUD   := 9600
 TARGET-BAUD  := 115200

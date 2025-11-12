@@ -25,6 +25,7 @@ import reader as old-reader
 import serial
 import ubx-message
 import monitor
+import uart
 
 import .reader
 import .writer
@@ -45,6 +46,22 @@ class Driver:
   }
   static UBLOX6-HWVERSIONS ::= {
     "00040007",
+  }
+
+  // NMEA Helpers while parser doesn't exist.  See $disable-nmea-messages_
+  static NMEA-CLASS-ID := 0xF0
+  static NMEA-MESSAGE-IDs := {
+    "GGA": 0x00,
+    "GLL": 0x01,
+    "GSA": 0x02,
+    "GSV": 0x03,
+    "RMC": 0x04,
+    "VTG": 0x05,
+    "GRS": 0x06,
+    "GST": 0x07,
+    "ZDA": 0x08,
+    "GBS": 0x09,
+    "DTM": 0x0A,
   }
 
   // store the last received message of some message types  (Maybe convert to a map to make it extensible):
@@ -69,6 +86,7 @@ class Driver:
   runner_ /Task? := null
   logger_/log.Logger := ?
 
+
   /**
   Creates a new driver object.
 
@@ -82,7 +100,7 @@ class Driver:
     deprecated and will be removed in a future release.
   Use $Writer to create an $io.Writer from a $serial.Device.
   */
-  constructor reader writer logger=log.default --auto-run/bool=true:
+  constructor reader writer --logger=log.default --auto-run/bool=true:
     logger_ = logger.with-name "ublox-gnss"
 
     if reader is old-reader.Reader:
@@ -96,6 +114,29 @@ class Driver:
     //.run already puts runner task in the background
     //if auto-run: task --background:: run
     if auto-run: run
+
+  /* Working on a speed detect idea
+  constructor --tx-pin/int --rx-pin/int --logger=log.default --auto-run/bool=true:
+    logger_ = logger.with-name "ublox-gnss"
+
+    BAUDS := [115200, 57600, 38400, 9600]
+    TARGET-BAUD := 115200
+
+    Implement a port speed check - switch ports
+      port := uart.Port --tx=tx-pin --rx=rx-pin --baud-rate=BAUD
+      Listen for a timeout to determine if not garbage.
+      When first turned on NMEA messages come up (strings)
+
+
+
+    // Settle on the final speed and attach to adapter
+    port := uart.Port --tx=tx-pin --rx=rx-pin --baud-rate=BAUD
+    adapter_ = Adapter_ port.in port.out logger
+
+    //.run already puts runner task in the background
+    //if auto-run: task --background:: run
+    if auto-run: run
+  */
 
   time-to-first-fix -> Duration: return time-to-first-fix_
 
@@ -160,6 +201,9 @@ class Driver:
 
     // Try and get device type info, before sending anything.
     send-message-deviceinfo-poll_
+
+    // Turn off default NMEA messages
+    disable-nmea-messages_
 
     // With the device type determined and parsed, configure the device.
     task:: start-periodic-nav-packets_
@@ -290,6 +334,7 @@ class Driver:
     generation of messages can be requested.
   */
   start-periodic-nav-packets_ -> none:
+    // Request UBX-NAV-TIMEUTC packets
     send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavTimeUtc.ID 5
 
     if (float.parse device-protocol-version_) >= 15.0 :
@@ -300,13 +345,14 @@ class Driver:
 
     else if (float.parse device-protocol-version_) >= 14.0:
       logger_.debug "Setting up for 7M device type (legacy)."
+
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPosLlh.ID 1  // Legacy Equivalent to NavPvt Messages
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSvInfo.ID 1  // Legacy Equivalent to NavSat Messages
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSol.ID 1     // Legacy to help replace NavSat Messages
 
     else if (float.parse device-protocol-version_) >= 13.0:
-      logger_.debug "Setting up for 7M device type (legacy)."
+      logger_.debug "Setting up for 6M device type (legacy)."
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPosLlh.ID 1  // Legacy Equivalent to NavPvt Messages
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSvInfo.ID 1  // Legacy Equivalent to NavSat Messages
@@ -318,6 +364,25 @@ class Driver:
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
+
+  /**
+  Disables All Default NMEA Messages.
+
+  Iterates through the set of known default messages and sets the rate for each
+    to zero, for all outputs.  Done this way until enough of an NMEA Parser is
+    completed to manage this nicely.  Note: UBX-CFG-MSG is a legacy method.
+    Supported by later devices but could/should use UBX-CFG-VALSET at some later
+    point.  This function uses Per-Port method because some outputs still send
+    on all ports.  This function does NOT save this configuration to the device.
+
+  This has been done to quieten the uart as much as possible to increase
+    accuracy for things like time synchronisation.
+  */
+  disable-nmea-messages_ -> none:
+    rates := #[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    NMEA-MESSAGE-IDs.values.do:
+      message := ubx-message.CfgMsg.per-port --msg-class=NMEA-CLASS-ID --msg-id=it --rates=rates
+      send-message-cfg_ message
 
   /**
   Determines the protocol version supported by the device.
@@ -356,11 +421,20 @@ class Driver:
   /**
   Sends a subscription for specific message, and the defined rate.
 
-  Constructs (and sends) a UBX-CFG message asking for the specified class-id/
-    message-id message type, at the specifid rate
+  Constructs a UBX-CFG message asking for the specified class-id/ message-id
+    message type to be sent at the specifid rate.  Passes to $send-message-cfg_
+    message sending and error-checking logic.
   */
   send-set-message-rate_ class-id message-id rate:
     message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
+    send-message-cfg_ message
+
+  /**
+  Sends various types of CFG messages.
+
+  Includes handling logic of waiting for the response.
+  */
+  send-message-cfg_ message/ubx-message.CfgMsg:
     command-mutex_.do:
       // Reset the latch
       command-cfg-latch_ = monitor.Latch
@@ -378,10 +452,14 @@ class Driver:
       if response is ubx-message.AckAck:
         // logger_.debug  "Acknowledged."
       if response is ubx-message.AckNak:
-        logger_.debug  "NEGATIVE acknowledged."
+        logger_.error  "NEGATIVE acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+
 
   /**
-  Sends a request for device information, using UBX-MON-VER message
+  Sends a request for device information, using UBX-MON-VER message.
+
+  Doesn't use the $send-message-cfg_ logic as this poll/request type does not
+    return an ACK/NAK message, but a UBX-MON-VER message.
   */
   send-message-deviceinfo-poll_:
     message := ubx-message.MonVer.poll

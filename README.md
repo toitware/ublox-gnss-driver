@@ -33,3 +33,56 @@ open protocols, which will be developed as needed.
 |  [`ubx-message`](https://github.com/toitware/ubx-message)  | Yes | Binary, Open but proprietary.  Originally written alongside this driver in support of the M8 device.  |
 | `NMEA` | Not yet. | ASCII text sentences (e.g., GGA, RMC) widely used for basic GNSS output.  Widely supported on ublox devices. |
 | `RTCM` | Not yet. | Standard for GNSS differential/RTK correction messages. u-blox M8 documentation mentions RTCM, however F9M features full support. |
+
+
+## How to manage specific tasks
+
+### Switch Serial interface to higher baud rate
+Whilst the serial driver is established at a specific speed, both the device/driver
+need to be configured at the same time for the required speed.
+
+
+
+### Getting time synchronisation from GPS
+This is best done using the a provided pin. Some modules do not expose this pin
+to the user, in which case, an averaging method is provided.
+
+#### Method 1: Using the TIMEPULSE Pin
+This pin (often labeled TP, TP1, or TIMEPULSE / PPS) pin on u-blox GNSS modules
+is a precision timing output, most commonly used for 1 Hz pulse-per-second (PPS)
+synchronization.  The pin outputs a square wave that’s aligned to GNSS time
+(usually GPS time or UTC).  Its rising (or falling) edge can be used as a
+precise timing reference.
+```Toit
+//todo: complete this example
+// Idea - have the user connect a pin to the TIMEPULSE/PPS pin on the driver.
+// Expose and send a UBX-CFG-TP5 message, controlling:
+// - Frequency (0.25 Hz – 10 MHz, module-dependent)
+// - Duty cycle (percentage high)
+// - Time reference (GPS, UTC, GLONASS, etc.)
+// - Alignment edge (rising/falling)
+// - Behavior when GNSS fix is lost (hold last, switch to free-run, disable)
+// - Polarity (active high / low)
+// Then have the driver use the pin and set time with it only if/when
+// drift exceeds a certain amount.  Check with Florian that there isn't
+// something already made that could make this significantly easier.
+
+```
+
+#### Method 2: Averaging method
+When `UBX-NAV-TIMEUTC` messages are received, they are first checked for
+validity (when `.valid-utc=true`).  If valid, the driver immediately measures
+the time offset between the time message and the local system time.  As these
+messages are continually received, a moving average is calculated with them in
+order to smooth out time differences/delays of local processing.  This average is exposed via the driver, and with that the system time can be set, as shown:
+```Toit
+//todo: complete this example
+// Idea - First, clean up serial, increase speed, disable chatty NMEA messages.
+// When time is valid, obtain accuracy, and a smart allowance for serialisation
+// time.
+
+
+
+
+
+```

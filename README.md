@@ -38,10 +38,25 @@ open protocols, which will be developed as needed.
 ## How to manage specific tasks
 
 ### Switch Serial interface to higher baud rate
-Whilst the serial driver is established at a specific speed, both the device/driver
-need to be configured at the same time for the required speed.
+Whilst the serial driver is established at a specific speed, both the
+device/driver needs to be set using the old speed to the required speed.  Then
+reconnecting the uart at the new speed is required.
+```Toit
+START-BAUD   := 9600
+TARGET-BAUD  := 115200
 
+port := uart.Port --tx=TX-PIN --rx=RX-PIN --baud-rate=START-BAUD
+driver := ublox-gnss.Driver port.in port.out --auto-run=false
+driver.set-uart --baud=TARGET-BAUD
 
+port = uart.Port --tx=TX-PIN --rx=RX-PIN --baud-rate=TARGET-BAUD
+driver = ublox-gnss.Driver port.in port.out
+```
+> [!TIP]
+> If debugging and rerunning the code over and over, the device may stay at the
+> higher speed from the previous run.  Solutions to this are either to save the
+> higher speed, or, to power off/on to ensure the device returns to the default
+> speed (9600 baud) as well as the code.
 
 ### Getting time synchronisation from GPS
 This is best done using the a provided pin. Some modules do not expose this pin

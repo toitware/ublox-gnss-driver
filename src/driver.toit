@@ -77,7 +77,7 @@ class Driver:
   // Latches/Mutexes for managing and acknowledging commands
   waiters_ := []
   command-mutex_ := monitor.Mutex    // Used to ensure one command at once
-  command-ver-latch_ := monitor.Latch    // Used to ensure mutex gets the result
+  command-poll-latch_ := monitor.Latch    // Used to ensure mutex gets the result
   command-cfg-latch_ := monitor.Latch    // Used to ensure mutex gets the result
 
   diagnostics_ /Diagnostics := Diagnostics --known-satellites=0 --satellites-in-view=0 --signal-quality=0.0 --time-to-first-fix=Duration.ZERO
@@ -138,6 +138,17 @@ class Driver:
     if auto-run: run
   */
 
+
+  /**
+  Set Port Configuration.
+
+  Considering this might dump the connection and miss the ACK, waiting for one
+    is not necessary.
+  */
+  set-uart --baud/int -> none:
+    message := ubx-message.CfgPrt.uart --baud=baud
+    send-message-poll_ message --return-immediately
+
   time-to-first-fix -> Duration: return time-to-first-fix_
 
   diagnostics -> Diagnostics: return diagnostics_
@@ -172,8 +183,13 @@ class Driver:
 
         else if message is ubx-message.MonVer:
           // If a command was waiting for the response, pass it
-          command-ver-latch_.set (message as ubx-message.MonVer)
+          command-poll-latch_.set (message as ubx-message.MonVer)
           process-mon-ver_ message as ubx-message.MonVer
+
+        else if message is ubx-message.CfgPrt:
+          // If a command was waiting for the response, pass it
+          command-poll-latch_.set (message as ubx-message.CfgPrt)
+          process-cfg-prt_ message as ubx-message.CfgPrt
 
         else if message is ubx-message.NavStatus:
           process-nav-status_ message as ubx-message.NavStatus
@@ -200,10 +216,14 @@ class Driver:
           logger_.debug "Received UBX message unknown to the driver." --tags={"message": message.stringify}
 
     // Try and get device type info, before sending anything.
-    send-message-deviceinfo-poll_
+    send-get-mon-ver_
 
     // Turn off default NMEA messages
     disable-nmea-messages_
+
+    // Not exactly useful to ask the speed after starting, but doing this
+    // to test the port speed SETTING part. Will be removed.
+    send-get-port-info_
 
     // With the device type determined and parsed, configure the device.
     task:: start-periodic-nav-packets_
@@ -237,6 +257,9 @@ class Driver:
 
     // Cache ubx-mon-ver message for later queries
     last-mon-ver-message_ = message
+
+  process-cfg-prt_ message/ubx-message.CfgPrt:
+    logger_.debug "Received CfgPrt message." --tags={"port-id": message.port-id, "baud": message.baud-rate, "mode": "0x$(%02x message.mode)"}
 
   process-ack-nak-message_ message/ubx-message.AckNak:
     //logger_.debug "Received AckNak message." --tags={"class": message.class-id-text , "message": message.message-id-text}
@@ -419,23 +442,18 @@ class Driver:
       return "12.00"
 
   /**
-  Sends a subscription for specific message, and the defined rate.
-
-  Constructs a UBX-CFG message asking for the specified class-id/ message-id
-    message type to be sent at the specifid rate.  Passes to $send-message-cfg_
-    message sending and error-checking logic.
-  */
-  send-set-message-rate_ class-id message-id rate:
-    message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
-    send-message-cfg_ message
-
-  /**
   Sends various types of CFG messages.
 
   Includes handling logic of waiting for the response.
+
+  Todo: Could possibly collapse the two send-message-cfg/poll functions together.
   */
-  send-message-cfg_ message/ubx-message.CfgMsg:
+  send-message-cfg_ message/ubx-message.CfgMsg --return-immediately/bool=false:
     command-mutex_.do:
+      if return-immediately:
+        adapter_.send-packet message.to-byte-array
+        return
+
       // Reset the latch
       command-cfg-latch_ = monitor.Latch
 
@@ -454,26 +472,52 @@ class Driver:
       if response is ubx-message.AckNak:
         logger_.error  "NEGATIVE acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
 
-
   /**
-  Sends a request for device information, using UBX-MON-VER message.
+  Sends a request for poll of information.
 
-  Doesn't use the $send-message-cfg_ logic as this poll/request type does not
-    return an ACK/NAK message, but a UBX-MON-VER message.
+  Can't use the $send-message-cfg_ logic as this poll/request type does not
+    return an ACK/NAK message, but a poll specific message.
   */
-  send-message-deviceinfo-poll_:
-    message := ubx-message.MonVer.poll
+  send-message-poll_ message --return-immediately/bool=false:
     command-mutex_.do:
+      if return-immediately:
+        adapter_.send-packet message.to-byte-array
+        return
+
       // Reset the latch
-      command-cfg-latch_ = monitor.Latch
+      command-poll-latch_ = monitor.Latch
 
       //logger_.debug  "Sent request." --tags={"message":"$(message)"}
       start := Time.monotonic-us
       adapter_.send-packet message.to-byte-array
-      response := command-ver-latch_.get
+      response := command-poll-latch_.get
       duration := Duration --us=(Time.monotonic-us - start)
 
       logger_.debug "Message Reponse." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+
+  /**
+  Sends a subscription for specific message, and the defined rate.
+
+  Constructs a UBX-CFG message asking for the specified class-id/ message-id
+    message type to be sent at the specifid rate.
+  */
+  send-set-message-rate_ class-id message-id rate:
+    message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
+    send-message-cfg_ message
+
+  /**
+  Sends a request for device information, using UBX-MON-VER message.
+  */
+  send-get-mon-ver_:
+    message := ubx-message.MonVer.poll
+    send-message-poll_ message
+
+  /**
+  Sends a request for connected port information, using UBX-CFG-PRT message.
+  */
+  send-get-port-info_:
+    message := ubx-message.CfgPrt.poll
+    send-message-poll_ message
 
 
 class Adapter_:

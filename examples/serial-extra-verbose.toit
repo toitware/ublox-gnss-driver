@@ -14,6 +14,7 @@ RX-PIN := gpio.Pin 18
 BAUD   := 9600
 
 main:
+  print "Opening on $BAUD"
   port := uart.Port --tx=TX-PIN --rx=RX-PIN --baud-rate=BAUD
   driver := ublox-gnss.Driver port.in port.out
 

@@ -2,9 +2,10 @@
 Driver for the u-blox M* GNSS receivers.
 
 ## How to use
-This driver was written initially with one purpose in mind: to return the device
-location.  If used as per the examples, this driver will continually update a
-'location' object, which can be queried as required.
+This driver returns location information as provided by the device, and attempts
+do do this for all ublox devices.  In this simple case, this driver will
+continually update a 'location' object, which can be queried by the user as
+required.
 
 #### Advanced use cases
 There are other features and information that these devices can provide.
@@ -16,7 +17,15 @@ output.  It is up to the user to look at the device manual and determine which
 messages are required, how to interpret the data, and to use driver to ask for
 it.
 
-## Interface Support
+## Interface and Port Support
+These IC's come with pins for different types of connectivity.  According to the
+datasheets, the devices can have the following 'ports' configured.:
+- UART1
+- UART2
+- I2C
+- SPI
+- USB
+
 | Interface | Support |
 |-|-|
 | I2C | Supported. [Toit code example.](https://github.com/toitware/ublox-gnss-driver/blob/main/examples/i2c.toit) |
@@ -50,20 +59,27 @@ open protocols, which will be developed as needed.
 | `RTCM` | Not yet. | Standard for GNSS differential/RTK correction messages. u-blox M8 documentation mentions RTCM, however F9M features full support. |
 
 
-## Guide for specific tasks
+## Specific tasks
 
 ### Switch UART to different baud rate
 Whilst the serial driver is established at a specific speed, both the
 device/driver needs to be set to the required speed **using the old speed**.
-Once done, reconnect the uart at the new speed.
+Once done, reconnect the uart at the new speed.  This driver does not save this
+configuration, so each power on, the device should be at the default 9600 baud.
+(If the device has a different default, adjust the code accordingly.)
 ```Toit
-START-BAUD   := 9600
+DEFAULT-BAUD := 9600
 TARGET-BAUD  := 115200
 
-port := uart.Port --tx=TX-PIN --rx=RX-PIN --baud-rate=START-BAUD
+// Make connection with default baud rate, initialise driver
+port := uart.Port --tx=TX-PIN --rx=RX-PIN --baud-rate=DEFAULT-BAUD
 driver := ublox-gnss.Driver port.in port.out --auto-run=false
-driver.set-uart --baud=TARGET-BAUD
 
+// Tell the device to use a different baud, and shut down the driver
+driver.set-uart --baud=TARGET-BAUD
+driver.close
+
+// Restart the connection at the newer baud rate, reinitialise driver
 port = uart.Port --tx=TX-PIN --rx=RX-PIN --baud-rate=TARGET-BAUD
 driver = ublox-gnss.Driver port.in port.out
 ```
@@ -87,7 +103,7 @@ precise timing reference.
 ```Toit
 //todo: complete this example
 // Idea - have the user connect a pin to the TIMEPULSE/PPS pin on the driver.
-// Expose and send a UBX-CFG-TP5 message, controlling:
+// Expose and send a UBX-CFG-TP5 message [done], controlling:
 // - Frequency (0.25 Hz – 10 MHz, module-dependent)
 // - Duty cycle (percentage high)
 // - Time reference (GPS, UTC, GLONASS, etc.)

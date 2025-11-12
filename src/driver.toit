@@ -115,6 +115,8 @@ class Driver:
     //if auto-run: task --background:: run
     if auto-run: run
 
+
+
   /* Working on a speed detect idea
   constructor --tx-pin/int --rx-pin/int --logger=log.default --auto-run/bool=true:
     logger_ = logger.with-name "ublox-gnss"
@@ -165,6 +167,8 @@ class Driver:
     assert: not runner_
     adapter_.flush
 
+
+
     // Start the message parser task to parse messages as they arrive.
     runner_ = task::
       message := ?
@@ -190,6 +194,21 @@ class Driver:
           // If a command was waiting for the response, pass it
           command-poll-latch_.set (message as ubx-message.CfgPrt)
           process-cfg-prt_ message as ubx-message.CfgPrt
+
+        else if message is ubx-message.CfgNav5:
+          // If a command was waiting for the response, pass it
+          command-poll-latch_.set (message as ubx-message.CfgNav5)
+          process-cfg-nav5_ message as ubx-message.CfgNav5
+
+        else if message is ubx-message.CfgTp5:
+          // If a command was waiting for the response, pass it
+          command-poll-latch_.set (message as ubx-message.CfgTp5)
+          process-cfg-tp5_ message as ubx-message.CfgTp5
+
+        else if message is ubx-message.CfgGnss:
+          // If a command was waiting for the response, pass it
+          command-poll-latch_.set (message as ubx-message.CfgGnss)
+          process-cfg-gnss_ message as ubx-message.CfgGnss
 
         else if message is ubx-message.NavStatus:
           process-nav-status_ message as ubx-message.NavStatus
@@ -223,7 +242,10 @@ class Driver:
 
     // Not exactly useful to ask the speed after starting, but doing this
     // to test the port speed SETTING part. Will be removed.
-    send-get-port-info_
+    send-get-port-config_
+    send-get-gnss-config_
+    send-get-nav5-config_
+    //send-get-tp5-config_
 
     // With the device type determined and parsed, configure the device.
     task:: start-periodic-nav-packets_
@@ -255,6 +277,15 @@ class Driver:
 
     // Cache ubx-mon-ver message for later queries
     last-mon-ver-message_ = message
+
+  process-cfg-nav5_ message/ubx-message.CfgNav5:
+    logger_.debug "Received CfgNav5 message." --tags={"fix-mode": message.fix-mode, "dyn-model": message.dyn-model-text}
+
+  process-cfg-tp5_ message/ubx-message.CfgTp5:
+    logger_.debug "Received CfgTp5 message." --tags={"frequency": message.freq, "index": message.tp-idx}
+
+  process-cfg-gnss_ message/ubx-message.CfgGnss:
+    logger_.debug "Received CfgGnss message." --tags={"config-blocks": message.num-config-blocks}
 
   process-cfg-prt_ message/ubx-message.CfgPrt:
     logger_.debug "Received CfgPrt message." --tags={"port-id": message.port-id, "baud": message.baud-rate, "mode": "0x$(%02x message.mode)"}
@@ -513,10 +544,30 @@ class Driver:
   /**
   Sends a request for connected port information, using UBX-CFG-PRT message.
   */
-  send-get-port-info_:
+  send-get-port-config_:
     message := ubx-message.CfgPrt.poll
     send-message-poll_ message
 
+  /**
+  Sends a request for current Gnss configuration (UBX-CFG-GNSS).
+  */
+  send-get-gnss-config_:
+    message := ubx-message.CfgGnss.poll
+    send-message-poll_ message
+
+  /**
+  Sends a request for current Navigation engine settings (UBX-CFG-CFGNAV5).
+  */
+  send-get-nav5-config_:
+    message := ubx-message.CfgNav5.poll
+    send-message-poll_ message
+
+  /**
+  Sends a request for current time pulse settings (UBX-CFG-TP5).
+  */
+  send-get-tp5-config_:
+    message := ubx-message.CfgTp5.poll
+    send-message-poll_ message
 
 class Adapter_:
   static STREAM-DELAY_ ::= Duration --ms=1

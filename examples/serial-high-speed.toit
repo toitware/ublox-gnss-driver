@@ -16,11 +16,13 @@ TARGET-BAUD  := 115200
 
 main:
   // Open port, and driver, and configure to a new speed.
+  print "Configuring on $START-BAUD for $TARGET-BAUD"
   port := uart.Port --tx=TX-PIN --rx=RX-PIN --baud-rate=START-BAUD
   driver := ublox-gnss.Driver port.in port.out --auto-run=false
   driver.set-uart --baud=TARGET-BAUD
 
   // Reestablish UART at that higher speed, and connect.
+  print "Opening on $TARGET-BAUD"
   port = uart.Port --tx=TX-PIN --rx=RX-PIN --baud-rate=TARGET-BAUD
   driver = ublox-gnss.Driver port.in port.out
 

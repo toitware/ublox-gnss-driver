@@ -237,7 +237,6 @@ class Driver:
       runner_ = null
 
   // Functions returning information/objects directly to users
-
   device-version -> ubx-message.MonVer?:
     return last-mon-ver-message_
 
@@ -245,7 +244,6 @@ class Driver:
     return last-nav-status-message_
 
   // Functions processing the different return messages
-
 
   process-mon-ver_ message/ubx-message.MonVer:
     //logger_.debug "Received MonVer message." --tags={"sw-ver": device-sw-version_, "hw-ver": device-hw-version_, "prot-ver": device-protocol-version_}

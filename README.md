@@ -35,9 +35,9 @@ open protocols, which will be developed as needed.
 | `RTCM` | Not yet. | Standard for GNSS differential/RTK correction messages. u-blox M8 documentation mentions RTCM, however F9M features full support. |
 
 
-## How to manage specific tasks
+## Guide for specific tasks
 
-### Switch Serial interface to higher baud rate
+### Switch UART to different baud rate
 Whilst the serial driver is established at a specific speed, both the
 device/driver needs to be set using the old speed to the required speed.  Then
 reconnecting the uart at the new speed is required.

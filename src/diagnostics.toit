@@ -10,16 +10,16 @@ class Diagnostics:
   The time to first fix.
   0, if no fix has been obtained.
   */
-  time_to_first_fix/Duration
+  time-to-first-fix/Duration
 
   /** The signal quality. */
-  signal_quality/float
+  signal-quality/float
 
   /** Number of satellites currently in view of the GNSS antenna. */
-  satellites_in_view/int
+  satellites-in-view/int
 
   /** Number of satellites currently known by the GNSS receiver. */
-  known_satellites/int
+  known-satellites/int
 
   /** Constructs diagnostics for GNSS. */
-  constructor --.time_to_first_fix --.signal_quality --.satellites_in_view --.known_satellites:
+  constructor --.time-to-first-fix --.signal-quality --.satellites-in-view --.known-satellites:

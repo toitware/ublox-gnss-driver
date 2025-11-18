@@ -41,14 +41,7 @@ class Driver:
   static COORDINATE-FACTOR /float ::= 10_000_000.0
   static QUALITY-SAT-COUNT_ ::= 4
 
-  static UBLOX7-HWVERSIONS ::= {
-    "00070000",
-  }
-  static UBLOX6-HWVERSIONS ::= {
-    "00040007",
-  }
-
-  // NMEA Helpers while parser doesn't exist.  See $disable-nmea-messages_
+  // NMEA Helpers while a protocol specific parser doesn't exist.  See $disable-nmea-messages_
   static NMEA-CLASS-ID := 0xF0
   static NMEA-MESSAGE-IDs := {
     "GGA": 0x00,
@@ -67,6 +60,7 @@ class Driver:
   // store the last received message of some message types  (Maybe convert to a map to make it extensible):
   last-nav-status-message_/ubx-message.NavStatus? := null
   last-mon-ver-message_/ubx-message.MonVer? := null
+  last-message/Map := {:}
 
   // fixed properties extracted from messages
   time-to-first-fix_/Duration := Duration.ZERO
@@ -86,6 +80,13 @@ class Driver:
   runner_ /Task? := null
   logger_/log.Logger := ?
 
+  // HWVERSION.  Done this way for users to insert their own HWVERSION into if needed.
+  ublox7-hwversions/List := [
+    "00070000",
+  ]
+  ublox6-hwversions/List := [
+    "00040007",
+  ]
 
   /**
   Creates a new driver object.
@@ -111,10 +112,12 @@ class Driver:
 
     adapter_ = Adapter_ reader writer logger
 
+    // Separate runner task from advanced operation.
+    // if advanced, don't run default message subscriptions.
+
     //.run already puts runner task in the background
     //if auto-run: task --background:: run
     if auto-run: run
-
 
 
   /* Working on a speed detect idea
@@ -128,8 +131,6 @@ class Driver:
       port := uart.Port --tx=tx-pin --rx=rx-pin --baud-rate=BAUD
       Listen for a timeout to determine if not garbage.
       When first turned on NMEA messages come up (strings)
-
-
 
     // Settle on the final speed and attach to adapter
     port := uart.Port --tx=tx-pin --rx=rx-pin --baud-rate=BAUD
@@ -166,8 +167,6 @@ class Driver:
   run:
     assert: not runner_
     adapter_.flush
-
-
 
     // Start the message parser task to parse messages as they arrive.
     runner_ = task::
@@ -306,14 +305,13 @@ class Driver:
     time-to-first-fix_ = (Duration --ms=message.time-to-first-fix)
 
   process-nav-posllh_ message/ubx-message.NavPosLlh:
-    logger_.debug "Received NavPosLlh message." --tags={"latitude" : message.latitude-deg , "longtitude" : message.longitude-deg, "itow": message.itow }
+    logger_.debug "Received NavPosLlh message." --tags={"latitude" : message.latitude-deg , "longitude" : message.longitude-deg, "itow": message.itow }
 
   process-nav-time-utc_ message/ubx-message.NavTimeUtc:
     logger_.debug "Received NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
 
   process-nav-sol_ message/ubx-message.NavSol:
-    logger_.debug "Received NavSol message." --tags={"position-dop" : message.position-dop} // , "longtitude" : message.latitude-deg, "itow": message.itow }
-
+    logger_.debug "Received NavSol message." --tags={"position-dop" : message.position-dop} // , "longitude" : message.latitude-deg, "itow": message.itow }
 
   process-nav-pvt_ message/ubx-message.NavPvt:
     logger_.debug "Received NavPvt message."
@@ -460,10 +458,10 @@ class Driver:
         throw "Couldn't parse protver string: '$(protver-ext)'"
 
     // Make some assumptions if the protver string doesn't exist:
-    if (UBLOX7-HWVERSIONS.any: it == message.hw-version):
+    if (ublox7-hwversions.any: it == message.hw-version):
       // Assume a u-blox 7, with no PROTVER
       return "14.00"
-    else if (UBLOX6-HWVERSIONS.any: it == message.hw-version):
+    else if (ublox6-hwversions.any: it == message.hw-version):
       // Assume a u-blox 6, or earlier, if no PROTVER
       return "13.00"
     else:

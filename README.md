@@ -2,20 +2,21 @@
 Driver for the u-blox M* GNSS receivers.
 
 ## How to use
-This driver returns location information as provided by the device, and attempts
-do do this for all ublox devices.  In this simple case, this driver will
+This driver returns location information as provided by the device.  It attempts
+do do this for all ublox devices.  In the simplest use case, the driver will
 continually update a 'location' object, which can be queried by the user as
 required.
 
 #### Advanced use cases
 There are other features and information that these devices can provide.
-Accessing it is based on sending messages to and from the device.  The 'Advanced
-examples' below shows how to use the mesage system via this driver to collect
-information from any of the supported message types of your device.  The
-information they can provide is vast, and not all types may have human readable
-output.  It is up to the user to look at the device manual and determine which
-messages are required, how to interpret the data, and to use driver to ask for
-it.
+Accessing additional information is based on sending messages to and from the
+device.  The driver allows the user to send/recieve messages to the device.  The
+'Advanced examples' below show how to use the mesage system via this driver to
+collect information from any of the implemented message types.  The information
+they can provide is vast, and not all types may have human readable output.  It
+is up to the user to look at the device manual and determine which messages are
+required, how to interpret the data, and to construct the message to send via
+the driver to ask for it.
 
 ## Interface and Port Support
 These IC's come with pins for different types of connectivity.  According to the
@@ -121,7 +122,8 @@ When `UBX-NAV-TIMEUTC` messages are received, they are first checked for
 validity (eg `.valid-utc=true`).  If valid, the driver immediately measures
 the time offset between the time message and the local system time.  As these
 messages are continually received, a moving average is calculated with them in
-order to smooth out time differences/delays of local processing.  This average is exposed via the driver, and with that the system time can be set, as shown:
+order to smooth out time differences/delays of local processing.  This average
+is exposed via the driver, and with that the system time can be set, as shown:
 ```Toit
 //todo: complete this example
 // Idea - First, clean up serial, increase speed[done], disable chatty NMEA messages[done].
@@ -133,3 +135,18 @@ order to smooth out time differences/delays of local processing.  This average i
 
 
 ```
+> [!WARNING] For historical reasons, GPS time is measured as time since
+> `1980-01-06T00:00:00Z`.  It was 'week 0' when the system went live.  When they
+> are subscribed, `NavTimeUtc` messages will always return a UTC time value.
+> However, if sufficient information has not yet been obtained to give accurate
+> time, the time will be Week 0 plus current uptime (in seconds).  `NavTimeUtc`
+> messages also have a boolean called `valid-utc` which will become `true` when the
+> device is able to provide accurate time.
+
+The uBlox manual additionally states:
+> [!INFORMATION]
+> Customers attaching u-blox receivers to simulators should be aware that GPS
+> time is referenced to 6th January 1980, GLONASS to 1st January 1996, Galileo
+> to 22nd August 1999 and BeiDou to 1st January 2006.  The receiver cannot be
+> expected to work reliably with signals that appear to come from before these
+> dates.

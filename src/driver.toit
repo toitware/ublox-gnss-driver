@@ -27,6 +27,23 @@ class Driver:
 
   static QUALITY-SAT-COUNT_ ::= 4
 
+  // NMEA Helpers while a protocol specific parser doesn't exist.
+  // See $disable-nmea-messages_
+  static NMEA-CLASS-ID := 0xF0
+  static NMEA-MESSAGE-IDs := {
+    "GGA": 0x00,
+    "GLL": 0x01,
+    "GSA": 0x02,
+    "GSV": 0x03,
+    "RMC": 0x04,
+    "VTG": 0x05,
+    "GRS": 0x06,
+    "GST": 0x07,
+    "ZDA": 0x08,
+    "GBS": 0x09,
+    "DTM": 0x0A,
+  }
+
   time-to-first-fix_ /Duration := Duration.ZERO
 
   // Latches/Mutexes for managing and acknowledging commands
@@ -112,6 +129,8 @@ class Driver:
     // or latch locks for missing the return messages.
     start-periodic-nav-packets_
 
+    // Turn off default (unused) NMEA messages.
+    disable-nmea-messages_
 
   reset:
     adapter_.reset
@@ -213,6 +232,26 @@ class Driver:
         // logger_.debug  "Acknowledged."
       if response is ubx-message.AckNak:
         logger_.error  "**NEGATIVE** acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+
+  /**
+  Disables All Default NMEA Messages.
+
+  When Ublox device is turned on, NMEA messages arrive by default.  This command
+    iterates through the set of known default messages and sets the rate for each
+    to zero, for all outputs.  Done this way until enough of an NMEA Parser is
+    completed to make this useful.  Note: UBX-CFG-MSG is a legacy method.
+    Supported by later devices but could/should use UBX-CFG-VALSET at some later
+    point.  This function uses Per-Port method because some outputs still send
+    on all ports.  This function does NOT SAVE this configuration to the device.
+
+  This has been done to quieten the uart as much as possible to increase
+    accuracy for things like time synchronisation.
+  */
+  disable-nmea-messages_ -> none:
+    rates := #[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    NMEA-MESSAGE-IDs.values.do:
+      message := ubx-message.CfgMsg.per-port --msg-class=NMEA-CLASS-ID --msg-id=it --rates=rates
+      send-message-cfg_ message
 
 
 class Adapter_:

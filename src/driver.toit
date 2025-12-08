@@ -82,11 +82,12 @@ class Driver:
   run:
     assert: not runner_
     adapter_.flush
-    start-periodic-nav-packets_
+
+    // Start the message parser task to parse messages as they arrive.
     runner_ = task::
       while true:
         message := adapter_.next-message
-        logger_.debug  "Received: $message"
+        //logger_.debug  "Received: $message"
 
         if message is ubx-message.AckAck:
           // Message is an ACK-ACK - positive response.
@@ -104,6 +105,13 @@ class Driver:
           process-nav-pvt_ message as ubx-message.NavPvt
         else if message is ubx-message.NavSat:
           process-nav-sat_ message as ubx-message.NavSat
+        else:
+          logger_.debug  "Driver received UNHANDLED message type: $message"
+
+    // Due to latching, runner must start **before** $start-periodic-nav-packets_
+    // or latch locks for missing the return messages.
+    start-periodic-nav-packets_
+
 
   reset:
     adapter_.reset
@@ -114,14 +122,14 @@ class Driver:
       runner_ = null
 
   process-ack-nak-message_ message/ubx-message.AckNak:
-    logger_.debug "Received AckNak message." --tags={"class": message.class-id-text , "message": message.message-id-text}
+    //logger_.debug "Received AckNak message." --tags={"class": message.class-id, "message": message.message-id}
 
   process-ack-ack-message_ message/ubx-message.AckAck:
-    logger_.debug "Received AckAck message." --tags={"class": message.class-id-text , "message": message.message-id-text}
+    //logger_.debug "Received AckAck message." --tags={"class": message.class-id, "message": message.message-id}
 
   process-nav-status_ message/ubx-message.NavStatus:
+    logger_.debug "Received NavStatus message."
     if time-to-first-fix_.in-ns != 0: return
-
     time-to-first-fix_ = Duration --ms=message.time-to-first-fix
 
   process-nav-pvt_ message/ubx-message.NavPvt:
@@ -204,7 +212,7 @@ class Driver:
       if response is ubx-message.AckAck:
         // logger_.debug  "Acknowledged."
       if response is ubx-message.AckNak:
-        logger_.error  "NEGATIVE acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+        logger_.error  "**NEGATIVE** acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
 
 
 class Adapter_:

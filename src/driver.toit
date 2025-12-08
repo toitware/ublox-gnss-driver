@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Toitware ApS. All rights reserved.
+// Copyright (C) 2025 Toit Contributors. All rights reserved.
 // Use of this source code is governed by a MIT-style license that can be found
 // in the LICENSE file.
 
@@ -28,12 +28,18 @@ class Driver:
   static QUALITY-SAT-COUNT_ ::= 4
 
   time-to-first-fix_ /Duration := Duration.ZERO
+
+  // Latches/Mutexes for managing and acknowledging commands
   waiters_ := []
+  command-mutex_ := monitor.Mutex      // Used to ensure one command at once
+  command-poll-latch_ := monitor.Latch // Used to ensure poll mutex gets the result
+  command-cfg-latch_ := monitor.Latch  // Used to ensure cfg mutex gets the result
 
   diagnostics_ /Diagnostics := Diagnostics --known-satellites=0 --satellites-in-view=0 --signal-quality=0.0 --time-to-first-fix=Duration.ZERO
   location_ /GnssLocation? := null
   adapter_ /Adapter_
   runner_ /Task? := null
+  logger_/log.Logger := ?
 
   /**
   Creates a new driver object.
@@ -49,6 +55,8 @@ class Driver:
   Use $Writer to create an $io.Writer from a $serial.Device.
   */
   constructor reader writer logger=log.default --auto-run/bool=true:
+    logger_ = logger.with-name "ublox-gnss"
+
     if reader is old-reader.Reader:
       reader = io.Reader.adapt reader
 
@@ -78,7 +86,19 @@ class Driver:
     runner_ = task::
       while true:
         message := adapter_.next-message
-        if message is ubx-message.NavStatus:
+        logger_.debug  "Received: $message"
+
+        if message is ubx-message.AckAck:
+          // Message is an ACK-ACK - positive response.
+          command-cfg-latch_.set (message as ubx-message.AckAck)
+          process-ack-ack-message_ message as ubx-message.AckAck
+
+        else if message is ubx-message.AckNak:
+          // Message is an ACK-NACK - negative response. (A command sent didn't work.)
+          command-cfg-latch_.set (message as ubx-message.AckNak)
+          process-ack-nak-message_ message as ubx-message.AckNak
+
+        else if message is ubx-message.NavStatus:
           process-nav-status_ message as ubx-message.NavStatus
         else if message is ubx-message.NavPvt:
           process-nav-pvt_ message as ubx-message.NavPvt
@@ -92,6 +112,12 @@ class Driver:
     if runner_:
       runner_.cancel
       runner_ = null
+
+  process-ack-nak-message_ message/ubx-message.AckNak:
+    logger_.debug "Received AckNak message." --tags={"class": message.class-id-text , "message": message.message-id-text}
+
+  process-ack-ack-message_ message/ubx-message.AckAck:
+    logger_.debug "Received AckAck message." --tags={"class": message.class-id-text , "message": message.message-id-text}
 
   process-nav-status_ message/ubx-message.NavStatus:
     if time-to-first-fix_.in-ns != 0: return
@@ -133,12 +159,53 @@ class Driver:
         --known-satellites=known-satellites
 
   start-periodic-nav-packets_:
-    set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
-    set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
-    set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
+    send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
+    send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
+    send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
 
-  set-message-rate_ class-id message-id rate:
-    adapter_.send-packet (ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate).to-byte-array
+  /**
+  Sends a subscription for specific message, and the defined rate.
+
+  Constructs a UBX-CFG message asking for the specified class-id/ message-id
+    message type to be sent at the specifid rate.
+  */
+  send-set-message-rate_ class-id message-id rate:
+    logger_.debug "Set Message Rate." --tags={"class": class-id, "message": message-id, "rate": rate}
+    message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
+    send-message-cfg_ message
+
+ /**
+  Sends various types of CFG messages, and waits for the response.
+
+  Handles logic of success and failure messages, while not blocking other
+    message traffic being handled by the driver.
+
+  Todo: Could possibly collapse the two send-message-cfg/poll functions together.
+  */
+  send-message-cfg_ message/ubx-message.CfgMsg --return-immediately/bool=false:
+    command-mutex_.do:
+      if return-immediately:
+        adapter_.send-packet message.to-byte-array
+        return
+
+      // Reset the latch
+      command-cfg-latch_ = monitor.Latch
+
+      //logger_.debug  "Sent request." --tags={"message":"$(message)"}
+      adapter_.send-packet message.to-byte-array
+
+      //To do: give a timeout.
+      start := Time.monotonic-us
+      adapter_.send-packet message.to-byte-array
+      response := command-cfg-latch_.get
+      duration := Duration --us=(Time.monotonic-us - start)
+      logger_.debug  "Message Reponse." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+
+      if response is ubx-message.AckAck:
+        // logger_.debug  "Acknowledged."
+      if response is ubx-message.AckNak:
+        logger_.error  "NEGATIVE acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+
 
 class Adapter_:
   static STREAM-DELAY_ ::= Duration --ms=1

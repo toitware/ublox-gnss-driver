@@ -226,10 +226,10 @@ class Driver:
       adapter_.send-packet message.to-byte-array
       response := command-cfg-latch_.get
       duration := Duration --us=(Time.monotonic-us - start)
-      logger_.debug  "Message Reponse." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
 
       if response is ubx-message.AckAck:
-        // logger_.debug  "Acknowledged."
+        logger_.debug  "Message Reponse." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+
       if response is ubx-message.AckNak:
         logger_.error  "**NEGATIVE** acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
 
@@ -248,8 +248,10 @@ class Driver:
     accuracy for things like time synchronisation.
   */
   disable-nmea-messages_ -> none:
+    // Bytearray gives zero rate for all outputs.
     rates := #[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
     NMEA-MESSAGE-IDs.values.do:
+      logger_.debug "Disable NMEA." --tags={"class": NMEA-CLASS-ID, "message": it, "rate": 0}
       message := ubx-message.CfgMsg.per-port --msg-class=NMEA-CLASS-ID --msg-id=it --rates=rates
       send-message-cfg_ message
 

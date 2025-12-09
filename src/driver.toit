@@ -49,8 +49,8 @@ class Driver:
   // Latches/Mutexes for managing and acknowledging commands
   waiters_ := []
   command-mutex_ := monitor.Mutex      // Used to ensure one command at once.
-  command-poll-latch_ := monitor.Latch // Used to ensure poll mutex gets the result.
-  command-cfg-latch_ := monitor.Latch  // Used to ensure cfg mutex gets the result.
+  command-poll-latch_ := monitor.Latch // Used to ensure poll gets the result.
+  command-cfg-latch_ := monitor.Latch  // Used to ensure cfg gets the result.
   runner-start-latch_ := monitor.Latch // Used to ensure message reciever has started.
 
   diagnostics_ /Diagnostics := Diagnostics --known-satellites=0 --satellites-in-view=0 --signal-quality=0.0 --time-to-first-fix=Duration.ZERO

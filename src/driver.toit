@@ -146,6 +146,9 @@ class Driver:
       waiters_.add latch
     return latch.get
 
+  /**
+  Starts the message parser task to recieve messages from the device.
+  */
   run -> none:
     assert: not runner_
     adapter_.flush
@@ -198,7 +201,7 @@ class Driver:
           logger_.debug  "Driver received UNHANDLED message type: $message"
 
   /**
-  Resets the adapter.
+  Resets the driver.
 
   Reset should be called when the driver is not actively running.  Otherwise
     some messages will be lost - may or may not be a problem depending on the
@@ -209,29 +212,38 @@ class Driver:
     time-to-first-fix_ = Duration.ZERO
     location_ = null
 
+  /**
+  Stops the message reciever task and shuts down the adapter.
+  */
   close -> none:
     if runner_:
       runner_.cancel
       runner_ = null
 
+  /** Processor for recieved UBX-ACK-NAK messages. */
   process-ack-nak-message_ message/ubx-message.AckNak -> none:
     //logger_.debug "Received AckNak message." --tags={"class": message.class-id, "message": message.message-id}
 
+  /** Processor for recieved UBX-ACK-ACK messages. */
   process-ack-ack-message_ message/ubx-message.AckAck -> none:
     //logger_.debug "Received AckAck message." --tags={"class": message.class-id, "message": message.message-id}
 
+  /** Processor for recieved UBX-NAV-SOL messages. */
   process-nav-sol_ message/ubx-message.NavSol:
     //logger_.debug "Received NavSol message." --tags={"position-dop" : message.position-dop} // , "longitude" : message.latitude-deg, "itow": message.itow }
 
+  /** Processor for recieved UBX-NAV-TIMEUTC messages. */
   process-nav-time-utc_ message/ubx-message.NavTimeUtc:
     //logger_.debug "Received NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
 
+  /** Processor for recieved UBX-NAV-STATUS messages. */
   process-nav-status_ message/ubx-message.NavStatus -> none:
     //logger_.debug "Received NavStatus message." --tags={"fix":message.gps-fix-text,"ttff-ms": message.time-to-first-fix }
 
     if time-to-first-fix_.in-ns != 0: return
     time-to-first-fix_ = Duration --ms=message.time-to-first-fix
 
+  /** Processor for recieved UBX-NAV-PVT position messages. (M8+) */
   process-nav-pvt_ message/ubx-message.NavPvt -> none:
     if message.is-gnss-fix:
       location_ = GnssLocation
@@ -247,11 +259,14 @@ class Driver:
         waiters.do:
           it.set location_
 
+  /** Processor for recieved UBX-NAV-POSLLH position messages. (M6/M7) */
   process-nav-posllh_ message/ubx-message.NavPosLlh:
     //logger_.debug "Received NavPosLlh message." --tags={"latitude" : message.latitude-deg , "longitude" : message.longitude-deg, "itow": message.itow }
 
-    // This message type doesn't natively contain time or fix status.
-    // Obtain this information from latest recieved of other message types.
+    // This message type doesn't natively contain time or fix status like the
+    // UBX-NAV-PVT messages. Instead, we will make the code non breaking by
+    // filling the existing structure with information from latest recieved of
+    // other message types.
     status-message/ubx-message.NavStatus? := null
     if latest-message.contains "STATUS":
       status-message = latest-message["STATUS"]
@@ -259,10 +274,11 @@ class Driver:
     if latest-message.contains "TIMEUTC":
       time-message = latest-message["TIMEUTC"]
 
-    // If fix is right/enough give the data back to the destination object.
-    // Yes there is a risk that the fix could stop, and the location data become
-    // stale, however we need breaking changes to old and new code - will do
-    // in a later PR.
+    // If fix is right/enough, give the data back to the destination object.
+    // Yes there is a risk that the fix could stop, and the location data
+    // become stale, however we need breaking changes to old and new code.
+    // (This matches pre-existing functionality (eg non breaking).  We can do
+    // in a later PR.  THUS: Returning a location depends on all three messages.
     if status-message and time-message:
       if status-message.gps-fix >= ubx-message.NavStatus.FIX-3D:
         location_ = GnssLocation
@@ -278,7 +294,7 @@ class Driver:
           waiters.do:
             it.set location_
 
-
+  /** Processor for recieved UBX-NAV-SAT satellite info messages. (M8+) */
   process-nav-sat_ message/ubx-message.NavSat -> none:
     cnos ::= []
     satellite-count ::= message.num-svs
@@ -301,7 +317,7 @@ class Driver:
         --satellites-in-view=satellites-in-view
         --known-satellites=known-satellites
 
-  /** Function processes legacy (<=7M) satellite information messages */
+  /** Processor for recieved UBX-NAV-SAT satellite info messages. (<=M7) */
   process-nav-svinfo_ message/ubx-message.NavSvInfo:
     //logger_.debug "Received NavSvInfo message." --tags={"satellite-count" : message.satellite-count}
 
@@ -326,21 +342,22 @@ class Driver:
         --satellites-in-view=satellites-in-view
         --known-satellites=known-satellites
 
+  /** Processor for recieved UBX-MON-VER messages. */
   process-mon-ver_ message/ubx-message.MonVer -> none:
     // Determine protocol version (include fallback)
     device-protocol-version := supported-protocol-version message
     device-protocol-version_ = device-protocol-version
     logger_.debug "Received MonVer message." --tags={"sw-ver": message.sw-version, "hw-ver": message.hw-version, "prot-ver": device-protocol-version}
 
-
   /**
-  Sends subscriptions for messages required for the driver to know location.
+  Sends subscriptions for required messages to discover current location.
 
   Needs to understand what device is currently configured so that the right
-    generation of messages can be requested.
+    generation of messages can be requested.  Otherwise will fall back to
+    orignal design version (M8).
 
   If using --disable-auto-run in the constructor, --force-protocol-version must
-    also be used to ensure the correct protocol version.
+    also be used to ensure the correct protocol version and prevent fallback.
   */
   start-periodic-nav-packets_ -> none:
     // Request UBX-NAV-TIMEUTC packets
@@ -384,7 +401,7 @@ class Driver:
     message type to be sent at the specifid rate.
   */
   send-set-message-rate_ class-id message-id rate -> none:
-    logger_.debug "Set Message Rate." --tags={"class": class-id, "message": message-id, "rate": rate}
+    //logger_.debug "Set Message Rate." --tags={"class": class-id, "message": message-id, "rate": rate}
     message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
     send-message_ message
 
@@ -433,7 +450,7 @@ class Driver:
 
       if message is ubx-message.CfgMsg:
         if response is ubx-message.AckAck:
-          logger_.debug  "Message Response." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+          //logger_.debug  "Message Response." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
           return
         if response is ubx-message.AckNak:
           logger_.error  "**NEGATIVE** acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}

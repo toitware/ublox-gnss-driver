@@ -14,16 +14,18 @@ RX-PIN := gpio.Pin 18
 BAUD   := 9600
 
 main:
+  // Open serial communication and start driver.
   print "Opening on $BAUD"
   port := uart.Port --tx=TX-PIN --rx=RX-PIN --baud-rate=BAUD
   driver := ublox-gnss.Driver port.in port.out
 
-  exception := catch:
+  // Wait for the driver to get version message back for display.
+  timeout := catch:
     with-timeout --ms=10_000:
       while (not driver.latest-message.contains "VER") or (driver.latest-message["VER"] == null):
         sleep --ms=250
 
-  if not exception:
+  if not timeout:
     version-message := driver.latest-message["VER"]
     print "Device detected:"
     print " Hardware Version: $(version-message.hw-version)"
@@ -31,22 +33,23 @@ main:
     version-message.extensions-raw.do:
       print " - Extension:     $(it)"
   else:
-    print "Device detection timeout."
+    print "Device detection: timed out."
 
   // Non-blocking - we return diagnostics whilst a fix is happening.
-  location := null
-
+  // Written to show diagnostics at least once. (If module already powered with
+  // an existing fix, these may not be shown in the example.)
   print "Awaiting Location Fix:"
+  location := null
   while not location:
     diags := driver.diagnostics
     time := "Elapsed: $((Duration --us=(Time.monotonic-us)).in-s)s"
     known := "Sats Known: $(diags.known-satellites)"
-    sats-iv := "Sats In View: $(diags.satellites-in-view)"
+    sats-iv := "Sats in View: $(diags.satellites-in-view)"
     sig-q := "SigQual: $(diags.signal-quality)"
     ttff := "TTFF: $(diags.time-to-first-fix.in-s)"
     fixtype := ""
 
-    if driver.latest-message["STATUS"] != null:
+    if (driver.latest-message.contains "STATUS") and (driver.latest-message["STATUS"] != null):
       fixtype = "Fix: $(driver.latest-message["STATUS"].gps-fix-text)"
 
     print " $time \t $fixtype $known $sats-iv $sig-q $ttff"

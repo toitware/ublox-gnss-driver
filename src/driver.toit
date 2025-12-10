@@ -115,7 +115,7 @@ class Driver:
       run
       started := runner-start-latch_.get
       duration := Duration --us=(Time.monotonic-us - start)
-      logger_.debug "Message Reciever started." --tags={"ms":(duration.in-ms)}
+      logger_.debug "Driver message reciever started." --tags={"ms":(duration.in-ms)}
 
       // Get device type info, before sending any commands.
       send-get-mon-ver_
@@ -191,8 +191,17 @@ class Driver:
         else:
           logger_.debug  "Driver received UNHANDLED message type: $message"
 
+  /**
+  Resets the adapter.
+
+  Reset should be called when the driver is not actively running.  Otherwise
+    some messages will be lost - may or may not be a problem depending on the
+    use case.
+  */
   reset -> none:
     adapter_.reset
+    time-to-first-fix_ = Duration.ZERO
+    location_ = null
 
   close -> none:
     if runner_:
@@ -367,7 +376,7 @@ class Driver:
         adapter_.send-packet message.to-byte-array
         return
 
-      // Reset the latch
+      // Reset the latch to prevent stray ACK/NAK getting used.
       command-latch_ = monitor.Latch
 
       start := Time.monotonic-us
@@ -385,7 +394,7 @@ class Driver:
 
       if message is ubx-message.CfgMsg:
         if response is ubx-message.AckAck:
-          logger_.debug  "Message Reponse." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+          logger_.debug  "Message Response." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
           return
         if response is ubx-message.AckNak:
           logger_.error  "**NEGATIVE** acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
@@ -482,7 +491,6 @@ class Adapter_:
     while true:
       peek ::= reader_.peek-byte 0
       if peek == 0xb5: // UBX protocol
-        start ::= Time.now
         e := catch: return ubx-message.Message.from-reader reader_
         log.warn "error parsing ubx message" --tags={"error": e}
       // Go to next byte.

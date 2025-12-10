@@ -24,8 +24,10 @@ class Driver:
   static METER-TO-MILLIMETER ::= 1000
   static METER-TO-CENTIMETER ::= 100
   static COORDINATE-FACTOR /float ::= 10_000_000.0
-
   static QUALITY-SAT-COUNT_ ::= 4
+
+  // Maximum ms to wait for command latches.
+  static COMMAND-TIMEOUT-MS_ ::= 5000
 
   // NMEA Helpers while a protocol specific parser doesn't exist.
   // See $disable-nmea-messages_
@@ -49,8 +51,7 @@ class Driver:
   // Latches/Mutexes for managing and acknowledging commands
   waiters_ := []
   command-mutex_ := monitor.Mutex      // Used to ensure one command at once.
-  command-poll-latch_ := monitor.Latch // Used to ensure poll gets the result.
-  command-cfg-latch_ := monitor.Latch  // Used to ensure cfg gets the result.
+  command-latch_ := monitor.Latch      // Used to ensure cfg gets the result.
   runner-start-latch_ := monitor.Latch // Used to ensure message reciever has started.
 
   diagnostics_ /Diagnostics := Diagnostics --known-satellites=0 --satellites-in-view=0 --signal-quality=0.0 --time-to-first-fix=Duration.ZERO
@@ -58,6 +59,15 @@ class Driver:
   adapter_ /Adapter_
   runner_ /Task? := null
   logger_/log.Logger := ?
+
+  // Map to contain the most recent message of all given types.
+  latest-message/Map := {:}
+
+  // HWVERSION.  Done this such that users can insert their own HWVERSION if needed.
+  ublox-protversion-lookup/Map := {
+    "00070000":"14.00",       // M7
+    "00040007":"13.00",       // M6
+  }
 
   /**
   Creates a new driver object.
@@ -91,20 +101,24 @@ class Driver:
     if not disable-auto-run:
       // Wait for message reciever task to start.
       // Code moved here and now using a latch to prevent slow startup noticed
-      // in one in 30 odd tests.  (Observed time differences between 25ms
-      // to >800ms for the task startup below.)
+      // in one in appx 30 tests.  (Observed time differences have been  between
+      // 25ms and >5000ms for the task startup `run` below.)
       start := Time.monotonic-us
       run
       started := runner-start-latch_.get
       duration := Duration --us=(Time.monotonic-us - start)
       logger_.debug "Message Reciever started." --tags={"ms":(duration.in-ms)}
 
-      // Start subscription to default messages.
-      start-periodic-nav-packets_
+      //sleep --ms=100
 
       // Turn off default (unused) NMEA messages.
       disable-nmea-messages_
 
+      // Get device type info, before sending anything.
+      send-get-mon-ver_
+
+      // Start subscription to default messages.
+      start-periodic-nav-packets_
 
   time-to-first-fix -> Duration: return time-to-first-fix_
 
@@ -131,14 +145,19 @@ class Driver:
 
         if message is ubx-message.AckAck:
           // Message is an ACK-ACK - positive response to a CFG message.
-          command-cfg-latch_.set (message as ubx-message.AckAck)
+          command-latch_.set (message as ubx-message.AckAck)
           process-ack-ack-message_ message as ubx-message.AckAck
 
         else if message is ubx-message.AckNak:
           // Message is an ACK-NACK - negative response to a CFG message.
           // (CFG command sent didn't work - unfortunately reasons not given.)
-          command-cfg-latch_.set (message as ubx-message.AckNak)
+          command-latch_.set (message as ubx-message.AckNak)
           process-ack-nak-message_ message as ubx-message.AckNak
+
+        else if message is ubx-message.MonVer:
+          // If a command was waiting for the response, pass it
+          command-latch_.set (message as ubx-message.MonVer)
+          process-mon-ver_ message as ubx-message.MonVer
 
         else if message is ubx-message.NavStatus:
           process-nav-status_ message as ubx-message.NavStatus
@@ -202,6 +221,20 @@ class Driver:
         --satellites-in-view=satellites-in-view
         --known-satellites=known-satellites
 
+  process-mon-ver_ message/ubx-message.MonVer:
+    device-protocol-version := supported-protocol-version message
+    logger_.debug "Received MonVer message." --tags={"sw-ver": message.sw-version, "hw-ver": message.hw-version, "prot-ver": device-protocol-version}
+
+    // Interprets information for the driver/users
+    //device-hw-version_ = message.hw-version
+    //device-sw-version_ = message.sw-version
+    //device-protocol-version_ = supported-protocol-version message
+
+    // Cache ubx-mon-ver message for later queries
+    //last-mon-ver-message_ = message
+    //latest-message["$(message.cls):$(message.id)"] = message
+    //latest-message[message] = message
+
   start-periodic-nav-packets_:
     send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
     send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
@@ -216,7 +249,15 @@ class Driver:
   send-set-message-rate_ class-id message-id rate:
     logger_.debug "Set Message Rate." --tags={"class": class-id, "message": message-id, "rate": rate}
     message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
-    send-message-cfg_ message
+    send-message_ message
+
+  /**
+  Sends a request for device information, using UBX-MON-VER message.
+  */
+  send-get-mon-ver_:
+    //logger_.debug "Send Version Request Poll."
+    message := ubx-message.MonVer.poll
+    send-message_ message
 
  /**
   Sends various types of CFG messages, and waits for the response.
@@ -224,28 +265,76 @@ class Driver:
   Handles logic of success and failure messages, while not blocking other
     message traffic being handled by the driver.
 
-  Todo: Could possibly collapse the two send-message-cfg/poll functions together.
+  Todo: Could possibly collapse the two send-message-cfg/-poll functions together.
   */
-  send-message-cfg_ message/ubx-message.CfgMsg --return-immediately/bool=false:
+  // ubx-message.Message is the parent class of all the messages.  Some message
+  //   types do not have functionality for being sent TO the device.  This is not
+  //   checked for here, but rather for the user to guard against.  The runner
+  //   would also need latch handling for such messages to avoid always being
+  //   handled by the $COMMAND-TIMEOUT-MS_ timeout.
+  send-message_ message/ubx-message.Message --return-immediately/bool=false:
     command-mutex_.do:
       if return-immediately:
         adapter_.send-packet message.to-byte-array
         return
 
       // Reset the latch
-      command-cfg-latch_ = monitor.Latch
+      command-latch_ = monitor.Latch
 
       //To do: give a timeout.
       start := Time.monotonic-us
-      adapter_.send-packet message.to-byte-array
-      response := command-cfg-latch_.get
-      duration := Duration --us=(Time.monotonic-us - start)
 
-      if response is ubx-message.AckAck:
-        logger_.debug  "Message Reponse." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+      response := null
+      duration/Duration := Duration.ZERO
+      exception := catch:
+        with-timeout --ms=COMMAND-TIMEOUT-MS_:
+          adapter_.send-packet message.to-byte-array
+          response = command-latch_.get
+          duration = Duration --us=(Time.monotonic-us - start)
+      if exception:
+        logger_.error "Command timed out" --tags={"message":"$(message)", "ms":COMMAND-TIMEOUT-MS_}
+        return
 
-      if response is ubx-message.AckNak:
-        logger_.error  "**NEGATIVE** acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+      if message is ubx-message.CfgMsg:
+        if response is ubx-message.AckAck:
+          logger_.debug  "Message Reponse." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+          return
+        if response is ubx-message.AckNak:
+          logger_.error  "**NEGATIVE** acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+          return
+
+      // Other response types, if necessary, here.
+
+  /**
+  Determines the protocol version supported by the device.
+
+  Makes assumptions if the device doesn't return the protocol version
+    explicitly, in accordance with the table in README.md.  Optionally sets the
+    class wide property, in case the user decides to specify it manually.
+  */
+  supported-protocol-version message/ubx-message.MonVer -> string:
+    // Find an extension containing PROTVER and if exists parse it
+    protver-ext/string? := message.extension "PROTVER"
+
+    if protver-ext != null:
+      // Protver exists, parse it.  Some devices delimit by ' ', some devices '=':
+      protver-ext = protver-ext.trim
+      pos-eq/int := protver-ext.index-of "="
+      pos-sp/int := protver-ext.index-of " "
+      if pos-eq > -1:
+        return protver-ext[(pos-eq + 1)..]
+      else if pos-sp > -1:
+        return protver-ext[(pos-sp + 1)..]
+      else:
+        throw "Couldn't parse protver string: '$(protver-ext)'"
+
+    // Use lookup if the protver string doesn't exist:
+    if ublox-protversion-lookup.contains message.hw-version:
+      // Assume a u-blox 7, with no PROTVER
+      return ublox-protversion-lookup[message.hw-version]
+
+    // All else fails = Assume 12. Address later if an issue is raised.
+    return "12.00"
 
   /**
   Disable all default NMEA messages.
@@ -268,7 +357,7 @@ class Driver:
     NMEA-MESSAGE-IDs.values.do:
       logger_.debug "Disable NMEA." --tags={"class": NMEA-CLASS-ID, "message": it, "rate": 0}
       message := ubx-message.CfgMsg.per-port --msg-class=NMEA-CLASS-ID --msg-id=it --rates=rates
-      send-message-cfg_ message
+      send-message_ message
 
 class Adapter_:
   static STREAM-DELAY_ ::= Duration --ms=1

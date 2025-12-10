@@ -223,8 +223,11 @@ class Driver:
   process-nav-time-utc_ message/ubx-message.NavTimeUtc:
     //logger_.debug "Received NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
 
+    // Store nav-status message for other handlers to use.
+    latest-message[message.id-string_] = message
+
   process-nav-status_ message/ubx-message.NavStatus -> none:
-    //logger_.debug "Received NavStatus message."
+    //logger_.debug "Received NavStatus message." --tags={"fix":message.gps-fix-text,"ttff-ms": message.time-to-first-fix }
 
     // Store nav-status message for other handlers so they know if they should
     // trust the position data.
@@ -258,25 +261,26 @@ class Driver:
       status-message = latest-message["STATUS"]
     time-message/ubx-message.NavTimeUtc? := null
     if latest-message.contains "TIMEUTC":
-      time-message = latest-message["STATUS"]
+      time-message = latest-message["TIMEUTC"]
 
     // If fix is right/enough give the data back to the destination object.
     // Yes there is a risk that the fix could stop, and the location data become
     // stale, however we need breaking changes to old and new code - will do
     // in a later PR.
-    if status-message.gps-fix >= ubx-message.NavStatus.FIX-3D:
-      location_ = GnssLocation
-        Location message.latitude-raw / COORDINATE-FACTOR message.longitude-raw / COORDINATE-FACTOR
-        message.height-msl-mm.to-float / METER-TO-MILLIMETER
-        time-message.utc-time
-        message.horizontal-accuracy-mm.to-float / METER-TO-MILLIMETER
-        message.vertical-accuracy-mm.to-float / METER-TO-MILLIMETER
+    if status-message and time-message:
+      if status-message.gps-fix >= ubx-message.NavStatus.FIX-3D:
+        location_ = GnssLocation
+          Location message.latitude-raw / COORDINATE-FACTOR message.longitude-raw / COORDINATE-FACTOR
+          message.height-msl-mm.to-float / METER-TO-MILLIMETER
+          time-message.utc-time
+          message.horizontal-accuracy-mm.to-float / METER-TO-MILLIMETER
+          message.vertical-accuracy-mm.to-float / METER-TO-MILLIMETER
 
-      waiters-mutex_.do:
-        waiters := waiters_
-        waiters_ = []
-        waiters.do:
-          it.set location_
+        waiters-mutex_.do:
+          waiters := waiters_
+          waiters_ = []
+          waiters.do:
+            it.set location_
 
 
   process-nav-sat_ message/ubx-message.NavSat -> none:

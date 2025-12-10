@@ -157,6 +157,9 @@ class Driver:
         message := adapter_.next-message
         //logger_.debug  "Received: $message"
 
+        // Store latest version of messages for other handlers to use.
+        latest-message[message.id-string_] = message
+
         if message is ubx-message.AckAck:
           // Message is an ACK-ACK - positive response to a CFG message.
           command-latch_.set (message as ubx-message.AckAck)
@@ -223,15 +226,8 @@ class Driver:
   process-nav-time-utc_ message/ubx-message.NavTimeUtc:
     //logger_.debug "Received NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
 
-    // Store nav-status message for other handlers to use.
-    latest-message[message.id-string_] = message
-
   process-nav-status_ message/ubx-message.NavStatus -> none:
     //logger_.debug "Received NavStatus message." --tags={"fix":message.gps-fix-text,"ttff-ms": message.time-to-first-fix }
-
-    // Store nav-status message for other handlers so they know if they should
-    // trust the position data.
-    latest-message[message.id-string_] = message
 
     if time-to-first-fix_.in-ns != 0: return
     time-to-first-fix_ = Duration --ms=message.time-to-first-fix

@@ -170,12 +170,20 @@ class Driver:
           command-latch_.set (message as ubx-message.MonVer)
           process-mon-ver_ message as ubx-message.MonVer
 
+        else if message is ubx-message.NavSvInfo:
+          process-nav-svinfo_ message as ubx-message.NavSvInfo
+        else if message is ubx-message.NavSol:
+          process-nav-sol_ message as ubx-message.NavSol
+        else if message is ubx-message.NavPosLlh:
+          process-nav-posllh_ message as ubx-message.NavPosLlh
+
         else if message is ubx-message.NavStatus:
           process-nav-status_ message as ubx-message.NavStatus
         else if message is ubx-message.NavPvt:
           process-nav-pvt_ message as ubx-message.NavPvt
         else if message is ubx-message.NavSat:
           process-nav-sat_ message as ubx-message.NavSat
+
 
         else if message is ubx-message.NavTimeUtc:
           process-nav-time-utc_ message as ubx-message.NavTimeUtc
@@ -197,8 +205,17 @@ class Driver:
   process-ack-ack-message_ message/ubx-message.AckAck -> none:
     //logger_.debug "Received AckAck message." --tags={"class": message.class-id, "message": message.message-id}
 
+  process-nav-posllh_ message/ubx-message.NavPosLlh:
+    //logger_.debug "Received NavPosLlh message." --tags={"latitude" : message.latitude-deg , "longitude" : message.longitude-deg, "itow": message.itow }
+
+  process-nav-sol_ message/ubx-message.NavSol:
+    //logger_.debug "Received NavSol message." --tags={"position-dop" : message.position-dop} // , "longitude" : message.latitude-deg, "itow": message.itow }
+
+  process-nav-time-utc_ message/ubx-message.NavTimeUtc:
+    //logger_.debug "Received NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
+
   process-nav-status_ message/ubx-message.NavStatus -> none:
-    logger_.debug "Received NavStatus message."
+    //logger_.debug "Received NavStatus message."
     if time-to-first-fix_.in-ns != 0: return
     time-to-first-fix_ = Duration --ms=message.time-to-first-fix
 
@@ -236,14 +253,37 @@ class Driver:
         --satellites-in-view=satellites-in-view
         --known-satellites=known-satellites
 
+  /** Function processes legacy (<=7M) satellite information messages */
+  process-nav-svinfo_ message/ubx-message.NavSvInfo:
+    //logger_.debug "Received NavSvInfo message." --tags={"satellite-count" : message.satellite-count}
+
+    cnos ::= []
+    satellite-count ::= message.satellite-count
+    satellite-count.repeat: | index |
+      satellite-data ::= message.satellite-data index
+      cnos.add satellite-data.cno
+
+    cnos.sort --in-place: | a b | b - a
+    n ::= min cnos.size QUALITY-SAT-COUNT_
+    sum := 0.0
+    n.repeat: sum += cnos[it]
+    quality ::= sum / QUALITY-SAT-COUNT_
+
+    satellites-in-view := cnos.reduce --initial=0: | count cno |
+      count + (cno > 0 ? 1 : 0)
+    known-satellites := satellite-count
+    diagnostics_ = Diagnostics
+        --time-to-first-fix=time-to-first-fix_
+        --signal-quality=quality
+        --satellites-in-view=satellites-in-view
+        --known-satellites=known-satellites
+
   process-mon-ver_ message/ubx-message.MonVer -> none:
     // Determine protocol version (include fallback)
     device-protocol-version := supported-protocol-version message
     device-protocol-version_ = device-protocol-version
     logger_.debug "Received MonVer message." --tags={"sw-ver": message.sw-version, "hw-ver": message.hw-version, "prot-ver": device-protocol-version}
 
-  process-nav-time-utc_ message/ubx-message.NavTimeUtc:
-    logger_.debug "Received NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
 
   /**
   Sends subscriptions for messages required for the driver to know location.
@@ -257,10 +297,37 @@ class Driver:
   start-periodic-nav-packets_ -> none:
     // Request UBX-NAV-TIMEUTC packets
     send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavTimeUtc.ID 15
-
     send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
-    send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
-    send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
+
+    // Using a float until better option (semver?)
+    prot-ver := float.parse device-protocol-version_
+
+    if prot-ver >= 15.0 :
+      logger_.debug "Setting up for M8+ device type."
+
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
+
+    else if (float.parse device-protocol-version_) >= 14.0:
+      logger_.debug "Setting up for 7M device type (legacy)."
+
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPosLlh.ID 1  // Legacy Equivalent to NavPvt Messages
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSvInfo.ID 1  // Legacy Equivalent to NavSat Messages
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSol.ID 1
+
+    else if (float.parse device-protocol-version_) >= 13.0:
+      logger_.debug "Setting up for 6M device type (legacy)."
+
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPosLlh.ID 1  // Legacy Equivalent to NavPvt Messages
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSvInfo.ID 1  // Legacy Equivalent to NavSat Messages
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSol.ID 1
+
+    else:
+      // Assume all others are M8 or later (for now):
+      logger_.debug "Defaulting to M8 Device Type."
+
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
+      send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
 
   /**
   Sends a subscription for specific message, and the defined rate.
@@ -377,7 +444,7 @@ class Driver:
     // Bytearray gives zero rate for all outputs.
     rates := #[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
     NMEA-MESSAGE-IDs.values.do:
-      logger_.debug "Disable NMEA." --tags={"class": NMEA-CLASS-ID, "message": it, "rate": 0}
+      //logger_.debug "Disable NMEA." --tags={"class": NMEA-CLASS-ID, "message": it, "rate": 0}
       message := ubx-message.CfgMsg.per-port --msg-class=NMEA-CLASS-ID --msg-id=it --rates=rates
       send-message_ message
 

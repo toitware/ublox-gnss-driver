@@ -151,7 +151,7 @@ class Driver:
         else if message is ubx-message.AckNak:
           // Message is an ACK-NACK - negative response to a CFG message.
           // (CFG command sent didn't work - unfortunately reasons not given.)
-          //command-latch_.set (message as ubx-message.AckNak)
+          command-latch_.set (message as ubx-message.AckNak)
           process-ack-nak-message_ message as ubx-message.AckNak
 
         else if message is ubx-message.MonVer:

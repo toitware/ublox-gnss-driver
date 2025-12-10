@@ -59,7 +59,7 @@ main:
     sleep --ms=3000
 
   print "Location found:"
-  print " Time to First Fix: $(driver.time-to-first-fix))"
+  print " Time to First Fix: $(driver.time-to-first-fix)"
   while true:
     time := "Elapsed: $((Duration --us=(Time.monotonic-us)).in-s)s"
     print " $time \t Location: $location ($(max location.horizontal-accuracy location.vertical-accuracy))"

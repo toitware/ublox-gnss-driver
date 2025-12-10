@@ -59,6 +59,7 @@ class Driver:
   adapter_ /Adapter_
   runner_ /Task? := null
   logger_/log.Logger := ?
+  device-protocol-version_/string? := null
 
   // Map to contain the most recent message of all given types.
   latest-message/Map := {:}
@@ -87,7 +88,9 @@ class Driver:
     subscribing to custom message types etc, the option is given to disable
     the automatic startup functions to start if/when desired.)
   */
-  constructor reader writer logger=log.default --disable-auto-run/bool=false:
+  constructor reader writer logger=log.default
+      --disable-auto-run/bool=false
+      --force-protocol-version/string?=null:
     logger_ = logger.with-name "ublox-gnss"
 
     if reader is old-reader.Reader:
@@ -98,24 +101,32 @@ class Driver:
 
     adapter_ = Adapter_ reader writer logger
 
-    if not disable-auto-run:
+    if disable-auto-run:
+      if force-protocol-version:
+        logger_.debug "Protocol version forced." --tags={"forced": force-protocol-version}
+        device-protocol-version_ = force-protocol-version
+
+    else:
       // Wait for message reciever task to start.
       // Code moved here and now using a latch to prevent slow startup noticed
       // in one in appx 30 tests.  (Observed time differences have been  between
-      // 25ms and >5000ms for the task startup `run` below.)
+      // 25ms and >5000ms for the task startup `$run` to initialise.)
       start := Time.monotonic-us
       run
       started := runner-start-latch_.get
       duration := Duration --us=(Time.monotonic-us - start)
       logger_.debug "Message Reciever started." --tags={"ms":(duration.in-ms)}
 
-      //sleep --ms=100
+      // Get device type info, before sending any commands.
+      send-get-mon-ver_
 
       // Turn off default (unused) NMEA messages.
       disable-nmea-messages_
 
-      // Get device type info, before sending anything.
-      send-get-mon-ver_
+      // If forced, manually set device protocol version.
+      if force-protocol-version:
+        logger_.debug "Protocol version forced." --tags={"detected": device-protocol-version_, "forced": force-protocol-version}
+        device-protocol-version_ = force-protocol-version
 
       // Start subscription to default messages.
       start-periodic-nav-packets_
@@ -132,7 +143,7 @@ class Driver:
     waiters_.add latch
     return latch.get
 
-  run:
+  run -> none:
     assert: not runner_
     adapter_.flush
 
@@ -165,29 +176,33 @@ class Driver:
           process-nav-pvt_ message as ubx-message.NavPvt
         else if message is ubx-message.NavSat:
           process-nav-sat_ message as ubx-message.NavSat
+
+        else if message is ubx-message.NavTimeUtc:
+          process-nav-time-utc_ message as ubx-message.NavTimeUtc
+
         else:
           logger_.debug  "Driver received UNHANDLED message type: $message"
 
-  reset:
+  reset -> none:
     adapter_.reset
 
-  close:
+  close -> none:
     if runner_:
       runner_.cancel
       runner_ = null
 
-  process-ack-nak-message_ message/ubx-message.AckNak:
+  process-ack-nak-message_ message/ubx-message.AckNak -> none:
     //logger_.debug "Received AckNak message." --tags={"class": message.class-id, "message": message.message-id}
 
-  process-ack-ack-message_ message/ubx-message.AckAck:
+  process-ack-ack-message_ message/ubx-message.AckAck -> none:
     //logger_.debug "Received AckAck message." --tags={"class": message.class-id, "message": message.message-id}
 
-  process-nav-status_ message/ubx-message.NavStatus:
+  process-nav-status_ message/ubx-message.NavStatus -> none:
     logger_.debug "Received NavStatus message."
     if time-to-first-fix_.in-ns != 0: return
     time-to-first-fix_ = Duration --ms=message.time-to-first-fix
 
-  process-nav-pvt_ message/ubx-message.NavPvt:
+  process-nav-pvt_ message/ubx-message.NavPvt -> none:
     if message.is-gnss-fix:
       location_ = GnssLocation
         Location message.lat / COORDINATE-FACTOR message.lon / COORDINATE-FACTOR
@@ -199,7 +214,7 @@ class Driver:
       waiters_ = []
       waiters.do: it.set location_
 
-  process-nav-sat_ message/ubx-message.NavSat:
+  process-nav-sat_ message/ubx-message.NavSat -> none:
     cnos ::= []
     satellite-count ::= message.num-svs
     satellite-count.repeat: | index |
@@ -221,21 +236,28 @@ class Driver:
         --satellites-in-view=satellites-in-view
         --known-satellites=known-satellites
 
-  process-mon-ver_ message/ubx-message.MonVer:
+  process-mon-ver_ message/ubx-message.MonVer -> none:
+    // Determine protocol version (include fallback)
     device-protocol-version := supported-protocol-version message
+    device-protocol-version_ = device-protocol-version
     logger_.debug "Received MonVer message." --tags={"sw-ver": message.sw-version, "hw-ver": message.hw-version, "prot-ver": device-protocol-version}
 
-    // Interprets information for the driver/users
-    //device-hw-version_ = message.hw-version
-    //device-sw-version_ = message.sw-version
-    //device-protocol-version_ = supported-protocol-version message
+  process-nav-time-utc_ message/ubx-message.NavTimeUtc:
+    logger_.debug "Received NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
 
-    // Cache ubx-mon-ver message for later queries
-    //last-mon-ver-message_ = message
-    //latest-message["$(message.cls):$(message.id)"] = message
-    //latest-message[message] = message
+  /**
+  Sends subscriptions for messages required for the driver to know location.
 
-  start-periodic-nav-packets_:
+  Needs to understand what device is currently configured so that the right
+    generation of messages can be requested.
+
+  If using --disable-auto-run in the constructor, --force-protocol-version must
+    also be used to ensure the correct protocol version.
+  */
+  start-periodic-nav-packets_ -> none:
+    // Request UBX-NAV-TIMEUTC packets
+    send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavTimeUtc.ID 15
+
     send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
     send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
     send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
@@ -246,7 +268,7 @@ class Driver:
   Constructs a UBX-CFG message asking for the specified class-id/ message-id
     message type to be sent at the specifid rate.
   */
-  send-set-message-rate_ class-id message-id rate:
+  send-set-message-rate_ class-id message-id rate -> none:
     logger_.debug "Set Message Rate." --tags={"class": class-id, "message": message-id, "rate": rate}
     message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
     send-message_ message
@@ -254,7 +276,7 @@ class Driver:
   /**
   Sends a request for device information, using UBX-MON-VER message.
   */
-  send-get-mon-ver_:
+  send-get-mon-ver_ -> none:
     //logger_.debug "Send Version Request Poll."
     message := ubx-message.MonVer.poll
     send-message_ message
@@ -272,7 +294,7 @@ class Driver:
   //   checked for here, but rather for the user to guard against.  The runner
   //   would also need latch handling for such messages to avoid always being
   //   handled via the $COMMAND-TIMEOUT-MS_ timeout path.
-  send-message_ message/ubx-message.Message --return-immediately/bool=false:
+  send-message_ message/ubx-message.Message --return-immediately/bool=false -> none:
     command-mutex_.do:
       if return-immediately:
         adapter_.send-packet message.to-byte-array
@@ -368,11 +390,11 @@ class Adapter_:
 
   constructor .reader_ .writer_ .logger_:
 
-  flush:
+  flush -> none:
     // Flush all data up to this point.
     wait-until-receiver-available_
 
-  reset:
+  reset -> none:
     wait-until-receiver-available_
     // Reset and reload configuration (cold boot + reboot of processes).
     send-packet (ubx-message.CfgRst --reset-mode=1).to-byte-array
@@ -381,11 +403,11 @@ class Adapter_:
     sleep --ms=50
     flush
 
-  send-packet bytes/ByteArray:
+  send-packet bytes/ByteArray -> none:
     writer_.write bytes
     sleep STREAM-DELAY_
 
-  send-ubx message/ubx-message.Message:
+  send-ubx message/ubx-message.Message -> none:
     writer_.write message.to-byte-array
     sleep STREAM-DELAY_
 

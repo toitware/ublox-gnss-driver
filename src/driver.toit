@@ -50,8 +50,9 @@ class Driver:
 
   // Latches/Mutexes for managing and acknowledging commands
   waiters_ := []
-  command-mutex_ := monitor.Mutex      // Used to ensure one command at once.
-  command-latch_ := monitor.Latch      // Used to ensure cfg gets the result.
+  waiters-mutex_ := monitor.Mutex  // Prevent race when $waiters_ is read/written
+  command-mutex_ := monitor.Mutex  // Used to ensure one command at once.
+  command-latch_ := monitor.Latch  // Used to ensure cfg gets the result.
   runner-start-latch_ := monitor.Latch // Used to ensure message reciever has started.
 
   diagnostics_ /Diagnostics := Diagnostics --known-satellites=0 --satellites-in-view=0 --signal-quality=0.0 --time-to-first-fix=Duration.ZERO
@@ -61,7 +62,8 @@ class Driver:
   logger_/log.Logger := ?
   device-protocol-version_/string? := null
 
-  // Map to contain the most recent message of all given types.
+  // Map to contain the most recent message of any/all given types, such that
+  //   the user can use them also.
   latest-message/Map := {:}
 
   // HWVERSION.  Done this such that users can insert their own HWVERSION if needed.
@@ -140,7 +142,8 @@ class Driver:
 
   location --blocking -> GnssLocation:
     latch := monitor.Latch
-    waiters_.add latch
+    waiters-mutex_.do:
+      waiters_.add latch
     return latch.get
 
   run -> none:
@@ -214,9 +217,6 @@ class Driver:
   process-ack-ack-message_ message/ubx-message.AckAck -> none:
     //logger_.debug "Received AckAck message." --tags={"class": message.class-id, "message": message.message-id}
 
-  process-nav-posllh_ message/ubx-message.NavPosLlh:
-    //logger_.debug "Received NavPosLlh message." --tags={"latitude" : message.latitude-deg , "longitude" : message.longitude-deg, "itow": message.itow }
-
   process-nav-sol_ message/ubx-message.NavSol:
     //logger_.debug "Received NavSol message." --tags={"position-dop" : message.position-dop} // , "longitude" : message.latitude-deg, "itow": message.itow }
 
@@ -225,6 +225,11 @@ class Driver:
 
   process-nav-status_ message/ubx-message.NavStatus -> none:
     //logger_.debug "Received NavStatus message."
+
+    // Store nav-status message for other handlers so they know if they should
+    // trust the position data.
+    latest-message[message.id-string_] = message
+
     if time-to-first-fix_.in-ns != 0: return
     time-to-first-fix_ = Duration --ms=message.time-to-first-fix
 
@@ -236,9 +241,43 @@ class Driver:
         message.utc-time
         message.horizontal-acc.to-float / METER-TO-MILLIMETER
         message.vertical-acc.to-float / METER-TO-MILLIMETER
-      waiters := waiters_
-      waiters_ = []
-      waiters.do: it.set location_
+
+      waiters-mutex_.do:
+        waiters := waiters_
+        waiters_ = []
+        waiters.do:
+          it.set location_
+
+  process-nav-posllh_ message/ubx-message.NavPosLlh:
+    //logger_.debug "Received NavPosLlh message." --tags={"latitude" : message.latitude-deg , "longitude" : message.longitude-deg, "itow": message.itow }
+
+    // This message type doesn't natively contain time or fix status.
+    // Obtain this information from latest recieved of other message types.
+    status-message/ubx-message.NavStatus? := null
+    if latest-message.contains "STATUS":
+      status-message = latest-message["STATUS"]
+    time-message/ubx-message.NavTimeUtc? := null
+    if latest-message.contains "TIMEUTC":
+      time-message = latest-message["STATUS"]
+
+    // If fix is right/enough give the data back to the destination object.
+    // Yes there is a risk that the fix could stop, and the location data become
+    // stale, however we need breaking changes to old and new code - will do
+    // in a later PR.
+    if status-message.gps-fix >= ubx-message.NavStatus.FIX-3D:
+      location_ = GnssLocation
+        Location message.latitude-raw / COORDINATE-FACTOR message.longitude-raw / COORDINATE-FACTOR
+        message.height-msl-mm.to-float / METER-TO-MILLIMETER
+        time-message.utc-time
+        message.horizontal-accuracy-mm.to-float / METER-TO-MILLIMETER
+        message.vertical-accuracy-mm.to-float / METER-TO-MILLIMETER
+
+      waiters-mutex_.do:
+        waiters := waiters_
+        waiters_ = []
+        waiters.do:
+          it.set location_
+
 
   process-nav-sat_ message/ubx-message.NavSat -> none:
     cnos ::= []

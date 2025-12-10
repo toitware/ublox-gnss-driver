@@ -151,7 +151,7 @@ class Driver:
         else if message is ubx-message.AckNak:
           // Message is an ACK-NACK - negative response to a CFG message.
           // (CFG command sent didn't work - unfortunately reasons not given.)
-          command-latch_.set (message as ubx-message.AckNak)
+          //command-latch_.set (message as ubx-message.AckNak)
           process-ack-nak-message_ message as ubx-message.AckNak
 
         else if message is ubx-message.MonVer:
@@ -259,19 +259,19 @@ class Driver:
     message := ubx-message.MonVer.poll
     send-message_ message
 
- /**
+  /**
   Sends various types of CFG messages, and waits for the response.
 
   Handles logic of success and failure messages, while not blocking other
     message traffic being handled by the driver.
 
-  Todo: Could possibly collapse the two send-message-cfg/-poll functions together.
+  Todo: Add [--if-error] [--if-success] blocks.
   */
   // ubx-message.Message is the parent class of all the messages.  Some message
   //   types do not have functionality for being sent TO the device.  This is not
   //   checked for here, but rather for the user to guard against.  The runner
   //   would also need latch handling for such messages to avoid always being
-  //   handled by the $COMMAND-TIMEOUT-MS_ timeout.
+  //   handled via the $COMMAND-TIMEOUT-MS_ timeout path.
   send-message_ message/ubx-message.Message --return-immediately/bool=false:
     command-mutex_.do:
       if return-immediately:
@@ -281,18 +281,17 @@ class Driver:
       // Reset the latch
       command-latch_ = monitor.Latch
 
-      //To do: give a timeout.
       start := Time.monotonic-us
-
       response := null
       duration/Duration := Duration.ZERO
       exception := catch:
         with-timeout --ms=COMMAND-TIMEOUT-MS_:
           adapter_.send-packet message.to-byte-array
           response = command-latch_.get
-          duration = Duration --us=(Time.monotonic-us - start)
+
+      duration = Duration --us=(Time.monotonic-us - start)
       if exception:
-        logger_.error "Command timed out" --tags={"message":"$(message)", "ms":COMMAND-TIMEOUT-MS_}
+        logger_.error "Command timed out" --tags={"message":"$(message)", "ms":duration.in-ms}
         return
 
       if message is ubx-message.CfgMsg:
@@ -303,7 +302,8 @@ class Driver:
           logger_.error  "**NEGATIVE** acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
           return
 
-      // Other response types, if necessary, here.
+      // Other response types, if necessary, here.  Not normally required as the
+      //   message receiver ($run) sends the message to the appropriate handler.
 
   /**
   Determines the protocol version supported by the device.

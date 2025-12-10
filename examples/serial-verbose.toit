@@ -35,22 +35,16 @@ main:
 
   // Non-blocking - we return diagnostics whilst a fix is happening.
   location := null
-  known := ""
-  sats-iv := ""
-  sig-q := ""
-  ttff := ""
-  time := ""
-  diags := ?
-  fixtype := ""
 
   print "Awaiting Location Fix:"
   while not location:
-    diags = driver.diagnostics
-    time = "Elapsed: $((Duration --us=(Time.monotonic-us)).in-s)s"
-    known   = "Sats Known: $(diags.known-satellites)"
-    sats-iv = "Sats In View: $(diags.satellites-in-view)"
-    sig-q   = "SigQual: $(diags.signal-quality)"
-    ttff   = "TTFF: $(diags.time-to-first-fix.in-s)"
+    diags := driver.diagnostics
+    time := "Elapsed: $((Duration --us=(Time.monotonic-us)).in-s)s"
+    known := "Sats Known: $(diags.known-satellites)"
+    sats-iv := "Sats In View: $(diags.satellites-in-view)"
+    sig-q := "SigQual: $(diags.signal-quality)"
+    ttff := "TTFF: $(diags.time-to-first-fix.in-s)"
+    fixtype := ""
 
     if driver.latest-message["STATUS"] != null:
       fixtype = "Fix: $(driver.latest-message["STATUS"].gps-fix-text)"
@@ -64,9 +58,9 @@ main:
   print "Location found:"
   print " Time to First Fix: $(driver.time-to-first-fix))"
   while true:
-    time = "Elapsed: $((Duration --us=(Time.monotonic-us)).in-s)s"
-    location = driver.location --blocking
+    time := "Elapsed: $((Duration --us=(Time.monotonic-us)).in-s)s"
     print " $time \t Location: $location ($(max location.horizontal-accuracy location.vertical-accuracy))"
     sleep --ms=3000
+    location = driver.location --blocking
 
   driver.close

@@ -12,9 +12,9 @@ SCL ::= gpio.Pin 22
 
 main:
   bus := i2c.Bus --sda=SDA --scl=SCL
-  device := bus.device ublox_gnss.I2C-ADDRESS
+  device := bus.device ublox-gnss.I2C-ADDRESS
 
-  driver := ublox_gnss.Driver
+  driver := ublox-gnss.Driver
     ublox-gnss.Reader device
     ublox-gnss.Writer device
 
@@ -25,6 +25,6 @@ main:
 
   while true:
     location := driver.location --blocking
-    print "Location: $location ($(max location.horizontal_accuracy location.vertical_accuracy))"
+    print "Location: $location ($(max location.horizontal-accuracy location.vertical-accuracy))"
 
   driver.close

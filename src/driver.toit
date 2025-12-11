@@ -16,10 +16,14 @@ import .reader
 import .writer
 
 
-/** Driver for u-blox GNSS devices.
+/**
+Driver for u-blox GNSS devices.
 
 Originally developed for the Max M8 GPS module.
 */
+
+// For backward compatibility.
+I2C-ADDRESS ::= 0x42
 
 class Driver:
   static I2C-ADDRESS ::= 0x42

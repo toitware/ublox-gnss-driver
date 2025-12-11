@@ -5,23 +5,23 @@
 import gpio
 import i2c
 
-import ublox_gnss
+import ublox-gnss
 
 SDA ::= gpio.Pin 21
 SCL ::= gpio.Pin 22
 
 main:
   bus := i2c.Bus --sda=SDA --scl=SCL
-  device := bus.device ublox_gnss.I2C_ADDRESS
+  device := bus.device ublox_gnss.I2C-ADDRESS
 
   driver := ublox_gnss.Driver
-    ublox_gnss.Reader device
-    ublox_gnss.Writer device
+    ublox-gnss.Reader device
+    ublox-gnss.Writer device
 
   print "getting location"
 
   driver.location --blocking
-  print "Took: $(driver.time_to_first_fix)"
+  print "Took: $(driver.time-to-first-fix)"
 
   while true:
     location := driver.location --blocking

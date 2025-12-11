@@ -2,14 +2,11 @@
 // Use of this source code is governed by a MIT-style license that can be found
 // in the LICENSE file.
 
-// Driver for Max M8 GPS module.
-
 import .diagnostics
 import gnss-location show GnssLocation
 import io
 import location show Location
 import log
-import math
 import monitor
 import reader as old-reader
 import serial
@@ -18,12 +15,18 @@ import ubx-message
 import .reader
 import .writer
 
-I2C-ADDRESS ::= 0x42
+
+/** Driver for u-blox GNSS devices.
+
+Originally developed for the Max M8 GPS module.
+*/
 
 class Driver:
+  static I2C-ADDRESS ::= 0x42
+
   static METER-TO-MILLIMETER ::= 1000
   static METER-TO-CENTIMETER ::= 100
-  static COORDINATE-FACTOR /float ::= 10_000_000.0
+  static COORDINATE-FACTOR/float ::= 10_000_000.0
   static QUALITY-SAT-COUNT_ ::= 4
 
   // Maximum ms to wait for command latches.
@@ -46,27 +49,28 @@ class Driver:
     "DTM": 0x0A,
   }
 
-  time-to-first-fix_ /Duration := Duration.ZERO
+  time-to-first-fix_/Duration := Duration.ZERO
 
   // Latches/Mutexes for managing and acknowledging commands
-  waiters_ := []
+  waiters-latch_ := []             // Stores latches for all users until fix.
   waiters-mutex_ := monitor.Mutex  // Prevent race when $waiters_ is read/written
   command-mutex_ := monitor.Mutex  // Used to ensure one command at once.
   command-latch_ := monitor.Latch  // Used to ensure cfg gets the result.
-  runner-start-latch_ := monitor.Latch // Used to ensure message reciever has started.
+  runner-start-latch_ := monitor.Latch // Used to ensure message receiver has started.
 
-  diagnostics_ /Diagnostics := Diagnostics --known-satellites=0 --satellites-in-view=0 --signal-quality=0.0 --time-to-first-fix=Duration.ZERO
-  location_ /GnssLocation? := null
-  adapter_ /Adapter_
-  runner_ /Task? := null
   logger_/log.Logger := ?
+  diagnostics_/Diagnostics := Diagnostics --known-satellites=0 --satellites-in-view=0 --signal-quality=0.0 --time-to-first-fix=Duration.ZERO
+  location_/GnssLocation? := null
+  adapter_/Adapter_ := ?
+  runner_/Task? := null
   device-protocol-version_/string? := null
 
   // Map to contain the most recent message of any/all given types, such that
   //   the user can use them also.
   latest-message/Map := {:}
 
-  // HWVERSION.  Done this such that users can insert their own HWVERSION if needed.
+  // HWVERSION to expected protver lookup.
+  // Done this such that users can insert their own HWVERSION if needed.
   ublox-protversion-lookup/Map := {
     "00070000":"14.00",       // M7
     "00040007":"13.00",       // M6
@@ -86,7 +90,7 @@ class Driver:
   Use $Writer to create an $io.Writer from a $serial.Device.
 
   Boolean $disable-auto-run is used to start basic operation.  For users looking
-    for advanced operation (eg, starting message reciever task later, or
+    for advanced operation (eg, starting message receiver task later, or
     subscribing to custom message types etc, the option is given to disable
     the automatic startup functions to start if/when desired.)
   */
@@ -109,7 +113,7 @@ class Driver:
         device-protocol-version_ = force-protocol-version
 
     else:
-      // Wait for message reciever task to start.
+      // Wait for message receiver task to start.
       // Code moved here and now using a latch to prevent slow startup noticed
       // in one in appx 30 tests.  (Observed time differences have been  between
       // 25ms and >5000ms for the task startup `$run` to initialise.)
@@ -117,7 +121,7 @@ class Driver:
       run
       started := runner-start-latch_.get
       duration := Duration --us=(Time.monotonic-us - start)
-      logger_.debug "Driver message reciever started." --tags={"ms":(duration.in-ms)}
+      logger_.debug "Driver message receiver started." --tags={"ms":(duration.in-ms)}
 
       // Get device type info, before sending any commands.
       send-get-mon-ver_
@@ -137,13 +141,19 @@ class Driver:
 
   diagnostics -> Diagnostics: return diagnostics_
 
+  /**
+  Returns current location, or null if no fix yet.
+  */
   location -> GnssLocation?:
     return location_
 
+  /**
+  Variant of $location, which blocks until a fix.
+  */
   location --blocking -> GnssLocation:
     latch := monitor.Latch
     waiters-mutex_.do:
-      waiters_.add latch
+      waiters-latch_.add latch
     return latch.get
 
   /**
@@ -213,7 +223,7 @@ class Driver:
     location_ = null
 
   /**
-  Stops the message reciever task and shuts down the adapter.
+  Stops the message receiver task and shuts down the adapter.
   */
   close -> none:
     if runner_:
@@ -229,21 +239,25 @@ class Driver:
     //logger_.debug "Received AckAck message." --tags={"class": message.class-id, "message": message.message-id}
 
   /** Processor for recieved UBX-NAV-SOL messages. */
-  process-nav-sol_ message/ubx-message.NavSol:
+  process-nav-sol_ message/ubx-message.NavSol -> none:
     //logger_.debug "Received NavSol message." --tags={"position-dop" : message.position-dop} // , "longitude" : message.latitude-deg, "itow": message.itow }
 
   /** Processor for recieved UBX-NAV-TIMEUTC messages. */
-  process-nav-time-utc_ message/ubx-message.NavTimeUtc:
+  process-nav-time-utc_ message/ubx-message.NavTimeUtc -> none:
     //logger_.debug "Received NavTimeUtc message." --tags={"valid-utc" : message.valid-utc, "time-utc": message.utc-time }
 
   /** Processor for recieved UBX-NAV-STATUS messages. */
   process-nav-status_ message/ubx-message.NavStatus -> none:
     //logger_.debug "Received NavStatus message." --tags={"fix":message.gps-fix-text,"ttff-ms": message.time-to-first-fix }
-
     if time-to-first-fix_.in-ns != 0: return
     time-to-first-fix_ = Duration --ms=message.time-to-first-fix
 
-  /** Processor for recieved UBX-NAV-PVT position messages. (M8+) */
+  /**
+  Processor for recieved UBX-NAV-PVT position messages. (M8+)
+
+  Data obtained by this message is available in object.Location.  Message in
+    its raw format is available in $latest-message["POSLLH"].
+  */
   process-nav-pvt_ message/ubx-message.NavPvt -> none:
     if message.is-gnss-fix:
       location_ = GnssLocation
@@ -254,12 +268,17 @@ class Driver:
         message.vertical-acc.to-float / METER-TO-MILLIMETER
 
       waiters-mutex_.do:
-        waiters := waiters_
-        waiters_ = []
+        waiters := waiters-latch_
+        waiters-latch_ = []
         waiters.do:
           it.set location_
 
-  /** Processor for recieved UBX-NAV-POSLLH position messages. (M6/M7) */
+  /**
+  Processor for recieved UBX-NAV-POSLLH position messages. (M6/M7)
+
+  Data obtained by this message is available in object.Location.  Message in
+    its raw format is available in $latest-message["POSLLH"].
+  */
   process-nav-posllh_ message/ubx-message.NavPosLlh:
     //logger_.debug "Received NavPosLlh message." --tags={"latitude" : message.latitude-deg , "longitude" : message.longitude-deg, "itow": message.itow }
 
@@ -289,12 +308,19 @@ class Driver:
           message.vertical-accuracy-mm.to-float / METER-TO-MILLIMETER
 
         waiters-mutex_.do:
-          waiters := waiters_
-          waiters_ = []
+          waiters := waiters-latch_
+          waiters-latch_ = []
           waiters.do:
             it.set location_
 
-  /** Processor for recieved UBX-NAV-SAT satellite info messages. (M8+) */
+  /**
+  Processor for recieved UBX-NAV-SAT satellite info messages. (M8+)
+
+  This message type is used to produce diagnostic data to give information such
+    as fix type, signal quality, etc.  Data obtained by this message is
+    available in object.diagnostics.  Message in its raw format is available
+    in $latest-message["SAT"].
+  */
   process-nav-sat_ message/ubx-message.NavSat -> none:
     cnos ::= []
     satellite-count ::= message.num-svs
@@ -317,7 +343,8 @@ class Driver:
         --satellites-in-view=satellites-in-view
         --known-satellites=known-satellites
 
-  /** Processor for recieved UBX-NAV-SAT satellite info messages. (<=M7) */
+  /**
+  Processor for recieved UBX-NAV-SAT satellite info messages. (<=M7) */
   process-nav-svinfo_ message/ubx-message.NavSvInfo:
     //logger_.debug "Received NavSvInfo message." --tags={"satellite-count" : message.satellite-count}
 
@@ -360,8 +387,10 @@ class Driver:
     also be used to ensure the correct protocol version and prevent fallback.
   */
   start-periodic-nav-packets_ -> none:
-    // Request UBX-NAV-TIMEUTC packets
+    // Request UBX-NAV-TIMEUTC packets to give time info, every 15 sec.
     send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavTimeUtc.ID 15
+
+    // Request UBX-NAV-STATUS packets to give diagnostic info, every sec.
     send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
 
     // Using a float until better option (semver?)
@@ -373,14 +402,14 @@ class Driver:
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
 
-    else if (float.parse device-protocol-version_) >= 14.0:
+    else if prot-ver >= 14.0:
       logger_.debug "Setting up for 7M device type (legacy)."
 
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPosLlh.ID 1  // Legacy Equivalent to NavPvt Messages
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSvInfo.ID 1  // Legacy Equivalent to NavSat Messages
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSol.ID 1
 
-    else if (float.parse device-protocol-version_) >= 13.0:
+    else if prot-ver >= 13.0:
       logger_.debug "Setting up for 6M device type (legacy)."
 
       send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPosLlh.ID 1  // Legacy Equivalent to NavPvt Messages
@@ -460,7 +489,7 @@ class Driver:
       //   message receiver ($run) sends the message to the appropriate handler.
 
   /**
-  Determines the protocol version supported by the device.
+  Determines the protocol version supported by the device using VER message.
 
   Makes assumptions if the device doesn't return the protocol version
     explicitly, in accordance with the table in README.md.  Optionally sets the
@@ -482,9 +511,8 @@ class Driver:
       else:
         throw "Couldn't parse protver string: '$(protver-ext)'"
 
-    // Use lookup if the protver string doesn't exist:
+    // Use lookup if the protver string doesn't exist in the message:
     if ublox-protversion-lookup.contains message.hw-version:
-      // Assume a u-blox 7, with no PROTVER
       return ublox-protversion-lookup[message.hw-version]
 
     // All else fails = Assume 12. Address later if an issue is raised.
@@ -496,11 +524,12 @@ class Driver:
   When a Ublox device is turned on, NMEA messages arrive by default.  This
     command iterates through the set of known default messages and sets the rate
     for each to zero, and for all outputs.  Done this way until enough of an
-    NMEA Parser is completed to make this useful.  Note: UBX-CFG-MSG is a legacy
-    method.  Currently supported by later devices but could/should use
-    UBX-CFG-VALSET at some later point.  This function uses Per-Port method
-    because some outputs still send on all ports.  This function does NOT SAVE
-    this configuration to the device.
+    NMEA Parser is completed to make this useful.
+
+  Note: using UBX-CFG-MSG is a legacy method.  It is currently supported by
+    later devices but could/should use UBX-CFG-VALSET at some later point.
+    This function uses Per-Port method because some outputs still send on all
+    ports.  This function does NOT SAVE this configuration to the device.
 
   This has necessary to quieten the uart as much as possible, increasing
     accuracy for things like time synchronisation.

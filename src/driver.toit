@@ -228,12 +228,8 @@ class Driver:
   Handles logic of success and failure messages, while not blocking other
     message traffic being handled by the driver.
   */
-  send-message-cfg message/ubx-message.CfgMsg --wait/bool=true:
+  send-message-cfg message/ubx-message.CfgMsg:
     command-mutex_.do:
-      if not wait:
-        adapter_.send-packet message.to-byte-array
-        return
-
       // Reset the latch
       command-cfg-latch_ = monitor.Latch
 

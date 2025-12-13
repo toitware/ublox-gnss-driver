@@ -228,7 +228,7 @@ class Driver:
 
   Todo: Could possibly collapse the two send-message-cfg/poll functions together.
   */
-  send-message-cfg_ message/ubx-message.CfgMsg --wait/bool=true:
+  send-message-cfg message/ubx-message.CfgMsg --wait/bool=true:
     command-mutex_.do:
       if not wait:
         adapter_.send-packet message.to-byte-array

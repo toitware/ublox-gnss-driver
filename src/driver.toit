@@ -248,7 +248,7 @@ class Driver:
         logger_.error  "**NEGATIVE** acknowledgement." --tags={"response":"$(response)","ms":(duration.in-ms)}
 
   /**
-  Disable all default NMEA messages.
+  Disables all default NMEA messages.
 
   When a Ublox device is turned on, NMEA messages arrive by default.  This
     command iterates through the set of known default messages and sets the rate

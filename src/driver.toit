@@ -468,6 +468,8 @@ class Driver:
       // Reset the latch to prevent stray ACK/NAK getting used.
       command-latch_ = monitor.Latch
 
+      // todo: try/finally
+
       start := Time.monotonic-us
       response := null
       duration/Duration := Duration.ZERO

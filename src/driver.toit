@@ -210,7 +210,7 @@ class Driver:
     send-set-message-rate ubx-message.Message.NAV ubx-message.NavSat.ID 1
 
   /**
-  Sends a subscription for specific message, and the defined rate.
+  Sends a subscription for given $message-id, and $rate.
 
   Constructs a UBX-CFG message asking for the specified class-id/ message-id
     message type to be sent at the specifid rate.

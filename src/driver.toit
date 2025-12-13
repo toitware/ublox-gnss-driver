@@ -94,7 +94,7 @@ class Driver:
       // Wait for message receiver task to start.
       // Code moved here and now using a latch to prevent slow startup noticed
       // in one in 30 odd tests.  (Observed time differences between 25ms
-      // to >800ms for the task startup below.)
+      // to >800ms for the $run task to be running.)
       duration := Duration.of:
         run-latch := run
         run-latch.get
@@ -142,13 +142,11 @@ class Driver:
 
         if message is ubx-message.AckAck:
           // Message is an ACK-ACK - positive response to a CFG message.
-          command-cfg-latch_.set (message as ubx-message.AckAck)
           process-ack-ack-message_ message as ubx-message.AckAck
 
         else if message is ubx-message.AckNak:
           // Message is an ACK-NACK - negative response to a CFG message.
-          // (CFG command sent didn't work - unfortunately reasons not given.)
-          command-cfg-latch_.set (message as ubx-message.AckNak)
+          // (CFG command sent didn't work - unfortunately reasons are not given.)
           process-ack-nak-message_ message as ubx-message.AckNak
 
         else if message is ubx-message.NavStatus:
@@ -172,9 +170,11 @@ class Driver:
 
   process-ack-nak-message_ message/ubx-message.AckNak:
     //logger_.debug "Received AckNak message." --tags={"class": message.class-id, "message": message.message-id}
+    command-cfg-latch_.set (message as ubx-message.AckNak)
 
   process-ack-ack-message_ message/ubx-message.AckAck:
     //logger_.debug "Received AckAck message." --tags={"class": message.class-id, "message": message.message-id}
+    command-cfg-latch_.set (message as ubx-message.AckAck)
 
   process-nav-status_ message/ubx-message.NavStatus:
     logger_.debug "Received NavStatus message."

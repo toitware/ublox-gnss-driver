@@ -470,25 +470,24 @@ class Driver:
 
       // todo: try/finally
 
-      start := Time.monotonic-us
-      response := null
-      duration/Duration := Duration.ZERO
+      response := message       // Avoiding 'must be initialised on first use'.
+      duration := Duration.ZERO
       exception := catch:
         with-timeout --ms=COMMAND-TIMEOUT-MS_:
-          adapter_.send-packet message.to-byte-array
-          response = command-latch_.get
+          duration = Duration.of:
+            adapter_.send-packet message.to-byte-array
+            response = command-latch_.get
 
-      duration = Duration --us=(Time.monotonic-us - start)
       if exception:
-        logger_.error "Command timed out" --tags={"message":"$(message)", "ms":duration.in-ms}
+        logger_.error "Command timed out. " --tags={"message":"$(message)", "ms":duration.in-ms}
         return
 
       if message is ubx-message.CfgMsg:
         if response is ubx-message.AckAck:
-          //logger_.debug  "Message Response." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+          //logger_.debug  "Message Response." --tags={"response":"$(response)","ms":(duration.in-ms)}
           return
         if response is ubx-message.AckNak:
-          logger_.error  "**NEGATIVE** acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+          logger_.error  "**NEGATIVE** acknowledgement." --tags={"response":"$(response)","ms":(duration.in-ms)}
           return
 
       // Other response types, if necessary, here.  Not normally required as the

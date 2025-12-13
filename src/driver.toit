@@ -51,7 +51,7 @@ class Driver:
   command-mutex_ := monitor.Mutex      // Used to ensure one command at once.
   command-poll-latch_ := monitor.Latch // Used to ensure poll mutex gets the result.
   command-cfg-latch_ := monitor.Latch  // Used to ensure cfg mutex gets the result.
-  runner-start-latch_ := monitor.Latch // Used to ensure message reciever has started.
+  runner-start-latch_ := monitor.Latch // Used to ensure message receiver has started.
 
   diagnostics_ /Diagnostics := Diagnostics --known-satellites=0 --satellites-in-view=0 --signal-quality=0.0 --time-to-first-fix=Duration.ZERO
   location_ /GnssLocation? := null
@@ -73,7 +73,7 @@ class Driver:
   Use $Writer to create an $io.Writer from a $serial.Device.
 
   Boolean $disable-auto-run is used to start basic operation.  For users looking
-    for advanced operation (eg, starting message reciever task later, or
+    for advanced operation (eg, starting message receiver task later, or
     subscribing to custom message types etc, the option is given to disable
     the automatic startup functions to start if/when desired.)
   */
@@ -89,7 +89,7 @@ class Driver:
     adapter_ = Adapter_ reader writer logger
 
     if not disable-auto-run:
-      // Wait for message reciever task to start.
+      // Wait for message receiver task to start.
       // Code moved here and now using a latch to prevent slow startup noticed
       // in one in 30 odd tests.  (Observed time differences between 25ms
       // to >800ms for the task startup below.)
@@ -97,7 +97,7 @@ class Driver:
       run
       started := runner-start-latch_.get
       duration := Duration --us=(Time.monotonic-us - start)
-      logger_.debug "Message Reciever started." --tags={"ms":(duration.in-ms)}
+      logger_.debug "Message receiver started." --tags={"ms":(duration.in-ms)}
 
       // Start subscription to default messages.
       start-periodic-nav-packets_

@@ -212,8 +212,8 @@ class Driver:
   /**
   Sends a subscription for given $message-id, and $rate.
 
-  Constructs a UBX-CFG message asking for the specified class-id/ message-id
-    message type to be sent at the specifid rate.
+  Sends a UBX-CFG message asking for the specified $class-id/$message-id
+    message type to be sent at the given $rate.
   */
   send-set-message-rate class-id message-id rate:
     logger_.debug "Set Message Rate." --tags={"class": class-id, "message": message-id, "rate": rate}

@@ -72,10 +72,13 @@ class Driver:
     deprecated and will be removed in a future release.
   Use $Writer to create an $io.Writer from a $serial.Device.
 
-  Boolean $disable-auto-run is used to start basic operation.  For users looking
-    for advanced operation (eg, starting message receiver task later, or
-    subscribing to custom message types etc, the option is given to disable
-    the automatic startup functions to start if/when desired.)
+  When starting the driver with defaults, the driver subscribes to the messages
+    required to find location and time.  For advanced users looking to prevent
+    the default operation, and create subscriptions/messge handlers, etc,
+    themselves, specify `--disable-auto-run` on the constructor.  In this case,
+    users must set required configurations (via $send-message-cfg), subscribe
+    to desired message types (via $send-set-message-rate), and then start
+    the message receiver task ($run) manually.
   */
   constructor reader writer logger=log.default --disable-auto-run/bool=false:
     logger_ = logger.with-name "ublox-gnss"
@@ -203,9 +206,9 @@ class Driver:
         --known-satellites=known-satellites
 
   start-periodic-nav-packets_:
-    send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
-    send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
-    send-set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
+    send-set-message-rate ubx-message.Message.NAV ubx-message.NavStatus.ID 1
+    send-set-message-rate ubx-message.Message.NAV ubx-message.NavPvt.ID 1
+    send-set-message-rate ubx-message.Message.NAV ubx-message.NavSat.ID 1
 
   /**
   Sends a subscription for specific message, and the defined rate.
@@ -213,10 +216,10 @@ class Driver:
   Constructs a UBX-CFG message asking for the specified class-id/ message-id
     message type to be sent at the specifid rate.
   */
-  send-set-message-rate_ class-id message-id rate:
+  send-set-message-rate class-id message-id rate:
     logger_.debug "Set Message Rate." --tags={"class": class-id, "message": message-id, "rate": rate}
     message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
-    send-message-cfg_ message
+    send-message-cfg message
 
  /**
   Sends various types of CFG messages, and waits for the response.
@@ -226,7 +229,7 @@ class Driver:
 
   Todo: Could possibly collapse the two send-message-cfg/poll functions together.
   */
-  send-message-cfg_ message/ubx-message.CfgMsg --return-immediately/bool=false:
+  send-message-cfg message/ubx-message.CfgMsg --return-immediately/bool=false:
     command-mutex_.do:
       if return-immediately:
         adapter_.send-packet message.to-byte-array
@@ -268,7 +271,7 @@ class Driver:
     NMEA-MESSAGE-IDS_.values.do:
       logger_.debug "Disable NMEA." --tags={"class": NMEA-CLASS-ID_, "message": it, "rate": 0}
       message := ubx-message.CfgMsg.per-port --msg-class=NMEA-CLASS-ID_ --msg-id=it --rates=rates
-      send-message-cfg_ message
+      send-message-cfg message
 
 class Adapter_:
   static STREAM-DELAY_ ::= Duration --ms=1

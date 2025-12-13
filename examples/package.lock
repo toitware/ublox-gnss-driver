@@ -1,16 +1,14 @@
 sdk: ^2.0.0-alpha.144
 prefixes:
-  gnss_location: toit-gnss-location
-  location: toit-location
   ublox_gnss: ..
-  ubx_message: ubx-message
+  ubx-message: ubx-message
 packages:
   ..:
     path: ..
     prefixes:
       gnss_location: toit-gnss-location
       location: toit-location
-      ubx_message: ubx-message
+      ubx-message: ubx-message
   toit-gnss-location:
     url: github.com/toitware/toit-gnss-location
     name: gnss_location
@@ -21,10 +19,10 @@ packages:
   toit-location:
     url: github.com/toitware/toit-location
     name: location
-    version: 1.1.0
-    hash: bf2c8cbd54d6d7d185948f67240e921c1b0d7d54
+    version: 1.2.1
+    hash: 4b82655456045e46b0e730581615ec8e6d287f1d
   ubx-message:
     url: github.com/toitware/ubx-message
     name: ubx-message
-    version: 2.2.0
-    hash: cd86704a1553485c32a1a09327b7f7ba6c887dba
+    version: 2.3.0
+    hash: cef0fe251869170860cc50c0a73177f532465e9f

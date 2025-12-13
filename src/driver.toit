@@ -51,7 +51,6 @@ class Driver:
   command-mutex_ := monitor.Mutex      // Used to ensure one command at once.
   command-poll-latch_ := monitor.Latch // Used to ensure poll mutex gets the result.
   command-cfg-latch_ := monitor.Latch  // Used to ensure cfg mutex gets the result.
-  runner-start-latch_ := monitor.Latch // Used to ensure message receiver has started.
 
   diagnostics_ /Diagnostics := Diagnostics --known-satellites=0 --satellites-in-view=0 --signal-quality=0.0 --time-to-first-fix=Duration.ZERO
   location_ /GnssLocation? := null
@@ -75,12 +74,12 @@ class Driver:
   When starting the driver with defaults, the driver subscribes to the messages
     required to find location and time.  For advanced users looking to prevent
     the default operation, and create subscriptions/messge handlers, etc,
-    themselves, specify `--disable-auto-run` on the constructor.  In this case,
+    themselves, specify `--no-auto-run` on the constructor.  In this case,
     users must set required configurations (via $send-message-cfg), subscribe
     to desired message types (via $send-set-message-rate), and then start
     the message receiver task ($run) manually.
   */
-  constructor reader writer logger=log.default --disable-auto-run/bool=false:
+  constructor reader writer logger=log.default --auto-run/bool=true:
     logger_ = logger.with-name "ublox-gnss"
 
     if reader is old-reader.Reader:
@@ -91,14 +90,14 @@ class Driver:
 
     adapter_ = Adapter_ reader writer logger
 
-    if not disable-auto-run:
+    if auto-run:
       // Wait for message receiver task to start.
       // Code moved here and now using a latch to prevent slow startup noticed
       // in one in 30 odd tests.  (Observed time differences between 25ms
       // to >800ms for the task startup below.)
       duration := Duration.of:
-        run
-        started := runner-start-latch_.get
+        run-latch := run
+        run-latch.get
       logger_.debug "Message receiver started." --tags={"ms":(duration.in-ms)}
 
       // Start subscription to default messages.
@@ -120,13 +119,14 @@ class Driver:
     waiters_.add latch
     return latch.get
 
-  run:
+  run -> monitor.Latch:
     assert: not runner_
     adapter_.flush
+    start-latch := monitor.Latch
 
     // Start the message parser task to parse messages as they arrive.
     runner_ = task::
-      runner-start-latch_.set true
+      start-latch.set true
       while true:
         message := adapter_.next-message
         //logger_.debug  "Received: $message"
@@ -150,6 +150,8 @@ class Driver:
           process-nav-sat_ message as ubx-message.NavSat
         else:
           logger_.debug  "Driver received UNHANDLED message type: $message"
+
+    return start-latch
 
   reset:
     adapter_.reset
@@ -250,16 +252,16 @@ class Driver:
   /**
   Disables all default NMEA messages.
 
-  When a Ublox device is turned on, NMEA messages arrive by default.  This
-    command iterates through the set of known default messages and sets the rate
-    for each to zero, and for all outputs.  Done this way until enough of an
-    NMEA Parser is completed to make this useful.  Note: UBX-CFG-MSG is a legacy
-    method.  Currently supported by later devices but could/should use
+  When a Ublox device is turned on, several NMEA messages arrive by default.
+    This command iterates through the set of known default messages and sets the
+    rate for each to zero, and for all outputs.  Done this way until enough of
+    an NMEA Parser is completed to make this useful.  Note: UBX-CFG-MSG is a
+    legacy method.  Currently supported by later devices but could/should use
     UBX-CFG-VALSET at some later point.  This function uses Per-Port method
     because some outputs still send on all ports.  This function does NOT SAVE
     this configuration to the device.
 
-  This has necessary to quieten the uart as much as possible, increasing
+  This is necessary to quieten the uart as much as possible, increasing
     accuracy for things like time synchronisation.
   */
   disable-nmea-messages_ -> none:

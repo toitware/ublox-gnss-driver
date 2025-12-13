@@ -119,6 +119,15 @@ class Driver:
     waiters_.add latch
     return latch.get
 
+
+  /**
+  Starts the message receiver task.
+
+  Function returns a latch.  When the driver is being used manually (see
+    `--auto-start` in the constructor), the latch is set when the task has fully
+    started. This is useful to ensure the task has fully started before sending
+    CFG messages that would otherwise block until a ACK/NAK was received.
+  */
   run -> monitor.Latch:
     assert: not runner_
     adapter_.flush

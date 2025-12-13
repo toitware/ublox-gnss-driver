@@ -469,6 +469,7 @@ class Driver:
       command-latch_ = monitor.Latch
 
       // todo: try/finally
+      // todo: determine if/how we should convert to semphore.
 
       response := message       // Avoiding 'must be initialised on first use'.
       duration := Duration.ZERO

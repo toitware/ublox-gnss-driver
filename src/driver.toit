@@ -30,7 +30,7 @@ class Driver:
   // NMEA Helpers while a protocol specific parser doesn't exist.
   // See $disable-nmea-messages_.
   static NMEA-CLASS-ID_ := 0xF0
-  static NMEA-MESSAGE-IDs_ := {
+  static NMEA-MESSAGE-IDS_ := {
     "GGA": 0x00,
     "GLL": 0x01,
     "GSA": 0x02,
@@ -265,7 +265,7 @@ class Driver:
   disable-nmea-messages_ -> none:
     // Bytearray gives zero rate for all outputs.
     rates := #[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-    NMEA-MESSAGE-IDs_.values.do:
+    NMEA-MESSAGE-IDS_.values.do:
       logger_.debug "Disable NMEA." --tags={"class": NMEA-CLASS-ID_, "message": it, "rate": 0}
       message := ubx-message.CfgMsg.per-port --msg-class=NMEA-CLASS-ID_ --msg-id=it --rates=rates
       send-message-cfg_ message

@@ -220,13 +220,11 @@ class Driver:
     message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
     send-message-cfg message
 
- /**
+  /**
   Sends various types of CFG messages, and waits for the response.
 
   Handles logic of success and failure messages, while not blocking other
     message traffic being handled by the driver.
-
-  Todo: Could possibly collapse the two send-message-cfg/poll functions together.
   */
   send-message-cfg message/ubx-message.CfgMsg --wait/bool=true:
     command-mutex_.do:

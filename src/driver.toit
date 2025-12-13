@@ -96,10 +96,9 @@ class Driver:
       // Code moved here and now using a latch to prevent slow startup noticed
       // in one in 30 odd tests.  (Observed time differences between 25ms
       // to >800ms for the task startup below.)
-      start := Time.monotonic-us
-      run
-      started := runner-start-latch_.get
-      duration := Duration --us=(Time.monotonic-us - start)
+      duration := Duration.of:
+        run
+        started := runner-start-latch_.get
       logger_.debug "Message receiver started." --tags={"ms":(duration.in-ms)}
 
       // Start subscription to default messages.
@@ -239,16 +238,16 @@ class Driver:
       command-cfg-latch_ = monitor.Latch
 
       //To do: give a timeout.
-      start := Time.monotonic-us
-      adapter_.send-packet message.to-byte-array
-      response := command-cfg-latch_.get
-      duration := Duration --us=(Time.monotonic-us - start)
+      response := message       // Avoiding 'must be initialised on first use'.
+      duration := Duration.of:
+        adapter_.send-packet message.to-byte-array
+        response = command-cfg-latch_.get
 
       if response is ubx-message.AckAck:
-        logger_.debug  "Message Reponse." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+        logger_.debug  "Message Reponse." --tags={"response":"$(response)","ms":(duration.in-ms)}
 
       if response is ubx-message.AckNak:
-        logger_.error  "**NEGATIVE** acknowledgement." --tags={"message":"$(message)","response":"$(response)","ms":(duration.in-ms)}
+        logger_.error  "**NEGATIVE** acknowledgement." --tags={"response":"$(response)","ms":(duration.in-ms)}
 
   /**
   Disable all default NMEA messages.

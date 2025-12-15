@@ -116,10 +116,10 @@ class Driver:
   /**
   Starts the message receiver task.
 
-  Function returns a latch.  When the driver is being used manually (see
-    `--auto-start` in the constructor), the latch is set when the task has fully
-    started. This is useful to ensure the task has fully started before sending
-    CFG messages that would otherwise block until a ACK/NAK was received.
+  The $run command returns only when the task has started.  This ensures the
+    message receiver is ready before any messages are sent that would otherwise
+    cause code to block permanently without the corresponding ACK/NAK being
+    received.
   */
   run -> none:
     assert: not runner_

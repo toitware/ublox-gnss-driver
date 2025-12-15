@@ -233,7 +233,6 @@ class Driver:
       // Reset the latch
       command-cfg-latch_ = monitor.Latch
 
-      //To do: give a timeout.
       response := message       // Avoiding 'must be initialised on first use'.
       duration := Duration.of:
         adapter_.send-packet message.to-byte-array

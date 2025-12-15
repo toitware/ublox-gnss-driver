@@ -149,7 +149,7 @@ class Driver:
           else if message is ubx-message.NavSat:
             process-nav-sat_ message as ubx-message.NavSat
           else:
-            logger_.debug  "driver received UNHANDLED message type: $message"
+            logger_.debug "driver received UNHANDLED message type" --tags={"message": message}
 
     start-latch.get
     logger_.debug "message receiver started" --tags={"ms": duration.in-ms}

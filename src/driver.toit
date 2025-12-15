@@ -98,7 +98,7 @@ class Driver:
       duration := Duration.of:
         run-latch := run
         run-latch.get
-      logger_.debug "Message receiver started." --tags={"ms":(duration.in-ms)}
+      logger_.debug "message receiver started" --tags={"ms":(duration.in-ms)}
 
       // Start subscription to default messages.
       start-periodic-nav-packets_
@@ -138,14 +138,14 @@ class Driver:
       start-latch.set true
       while true:
         message := adapter_.next-message
-        //logger_.debug  "Received: $message"
+        //logger_.debug  "received: $message"
 
         if message is ubx-message.AckAck:
           // Message is an ACK-ACK - positive response to a CFG message.
           process-ack-ack-message_ message as ubx-message.AckAck
 
         else if message is ubx-message.AckNak:
-          // Message is an ACK-NACK - negative response to a CFG message.
+          // Message is an ACK-NAK - negative response to a CFG message.
           // (CFG command sent didn't work - unfortunately reasons are not given.)
           process-ack-nak-message_ message as ubx-message.AckNak
 
@@ -156,7 +156,7 @@ class Driver:
         else if message is ubx-message.NavSat:
           process-nav-sat_ message as ubx-message.NavSat
         else:
-          logger_.debug  "Driver received UNHANDLED message type: $message"
+          logger_.debug  "driver received UNHANDLED message type: $message"
 
     return start-latch
 
@@ -169,15 +169,15 @@ class Driver:
       runner_ = null
 
   process-ack-nak-message_ message/ubx-message.AckNak:
-    //logger_.debug "Received AckNak message." --tags={"class": message.class-id, "message": message.message-id}
+    //logger_.debug "received AckNak message" --tags={"class":message.class-id, "message":message.message-id}
     command-cfg-latch_.set (message as ubx-message.AckNak)
 
   process-ack-ack-message_ message/ubx-message.AckAck:
-    //logger_.debug "Received AckAck message." --tags={"class": message.class-id, "message": message.message-id}
+    //logger_.debug "received AckAck message" --tags={"class":message.class-id, "message":message.message-id}
     command-cfg-latch_.set (message as ubx-message.AckAck)
 
   process-nav-status_ message/ubx-message.NavStatus:
-    logger_.debug "Received NavStatus message."
+    logger_.debug "received NavStatus message"
     if time-to-first-fix_.in-ns != 0: return
     time-to-first-fix_ = Duration --ms=message.time-to-first-fix
 
@@ -227,7 +227,7 @@ class Driver:
     message type to be sent at the given $rate.
   */
   send-set-message-rate class-id message-id rate:
-    logger_.debug "Set Message Rate." --tags={"class": class-id, "message": message-id, "rate": rate}
+    logger_.debug "set message rate" --tags={"class":class-id, "message":message-id, "rate":rate}
     message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
     send-message-cfg message
 
@@ -249,7 +249,7 @@ class Driver:
         response = command-cfg-latch_.get
 
       if response is ubx-message.AckAck:
-        logger_.debug  "Message Reponse." --tags={"response":"$(response)","ms":(duration.in-ms)}
+        logger_.debug  "message reponse." --tags={"response":"$(response)","ms":(duration.in-ms)}
 
       if response is ubx-message.AckNak:
         logger_.error  "**NEGATIVE** acknowledgement." --tags={"response":"$(response)","ms":(duration.in-ms)}
@@ -272,8 +272,8 @@ class Driver:
   disable-nmea-messages_ -> none:
     // Bytearray gives zero rate for all outputs.
     rates := #[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    logger_.debug "disabling default NMEA messages"
     NMEA-MESSAGE-IDS_.values.do:
-      logger_.debug "Disable NMEA." --tags={"class": NMEA-CLASS-ID_, "message": it, "rate": 0}
       message := ubx-message.CfgMsg.per-port --msg-class=NMEA-CLASS-ID_ --msg-id=it --rates=rates
       send-message-cfg message
 
@@ -313,7 +313,7 @@ class Adapter_:
       if peek == 0xb5: // UBX protocol
         start ::= Time.now
         e := catch: return ubx-message.Message.from-reader reader_
-        log.warn "error parsing ubx message" --tags={"error": e}
+        log.warn "error parsing ubx message" --tags={"error":e}
       // Go to next byte.
       reader_.skip 1
 

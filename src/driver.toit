@@ -98,7 +98,7 @@ class Driver:
       duration := Duration.of:
         run-latch := run
         run-latch.get
-      logger_.debug "message receiver started" --tags={"ms":(duration.in-ms)}
+      logger_.debug "message receiver started" --tags={"ms": duration.in-ms}
 
       // Start subscription to default messages.
       start-periodic-nav-packets_
@@ -169,11 +169,11 @@ class Driver:
       runner_ = null
 
   process-ack-nak-message_ message/ubx-message.AckNak:
-    //logger_.debug "received AckNak message" --tags={"class":message.class-id, "message":message.message-id}
+    //logger_.debug "received AckNak message" --tags={"class": message.class-id, "message": message.message-id}
     command-cfg-latch_.set (message as ubx-message.AckNak)
 
   process-ack-ack-message_ message/ubx-message.AckAck:
-    //logger_.debug "received AckAck message" --tags={"class":message.class-id, "message":message.message-id}
+    //logger_.debug "received AckAck message" --tags={"class": message.class-id, "message": message.message-id}
     command-cfg-latch_.set (message as ubx-message.AckAck)
 
   process-nav-status_ message/ubx-message.NavStatus:
@@ -227,7 +227,7 @@ class Driver:
     message type to be sent at the given $rate.
   */
   send-set-message-rate class-id message-id rate:
-    logger_.debug "set message rate" --tags={"class":class-id, "message":message-id, "rate":rate}
+    logger_.debug "set message rate" --tags={"class": class-id, "message": message-id, "rate": rate}
     message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
     send-message-cfg message
 
@@ -249,10 +249,10 @@ class Driver:
         response = command-cfg-latch_.get
 
       if response is ubx-message.AckAck:
-        logger_.debug  "message reponse." --tags={"response":"$(response)","ms":(duration.in-ms)}
+        logger_.debug  "message reponse." --tags={"response": "$(response)", "ms": duration.in-ms}
 
       if response is ubx-message.AckNak:
-        logger_.error  "**NEGATIVE** acknowledgement." --tags={"response":"$(response)","ms":(duration.in-ms)}
+        logger_.error  "**NEGATIVE** acknowledgement." --tags={"response": "$(response)", "ms": duration.in-ms}
 
   /**
   Disables all default NMEA messages.
@@ -313,7 +313,7 @@ class Adapter_:
       if peek == 0xb5: // UBX protocol
         start ::= Time.now
         e := catch: return ubx-message.Message.from-reader reader_
-        log.warn "error parsing ubx message" --tags={"error":e}
+        log.warn "error parsing ubx message" --tags={"error": e}
       // Go to next byte.
       reader_.skip 1
 

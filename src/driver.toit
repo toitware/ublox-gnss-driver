@@ -238,6 +238,7 @@ class Driver:
       duration := Duration.of:
         adapter_.send-packet message.to-byte-array
         response = command-cfg-latch_.get
+      command-cfg-latch_ = null
 
       if response is ubx-message.AckAck:
         logger_.debug  "message reponse." --tags={"response": "$(response)", "ms": duration.in-ms}

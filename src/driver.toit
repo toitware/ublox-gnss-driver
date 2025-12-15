@@ -131,15 +131,11 @@ class Driver:
         start-latch.set true
         while true:
           message := adapter_.next-message
-          //logger_.debug  "received: $message"
+          //logger_.debug "received" --tags={"message": message}
 
           if message is ubx-message.AckAck:
-            // Message is an ACK-ACK - positive response to a CFG message.
             process-ack-ack-message_ message as ubx-message.AckAck
-
           else if message is ubx-message.AckNak:
-            // Message is an ACK-NAK - negative response to a CFG message.
-            // (CFG command sent didn't work - unfortunately reasons are not given.)
             process-ack-nak-message_ message as ubx-message.AckNak
 
           else if message is ubx-message.NavStatus:
@@ -163,10 +159,13 @@ class Driver:
       runner_ = null
 
   process-ack-nak-message_ message/ubx-message.AckNak:
+    // Message is an ACK-NAK - negative response to a CFG message.
+    // (CFG command sent didn't work - unfortunately reasons are not given.)
     //logger_.debug "received AckNak message" --tags={"class": message.class-id, "message": message.message-id}
     command-cfg-latch_.set (message as ubx-message.AckNak)
 
   process-ack-ack-message_ message/ubx-message.AckAck:
+    // Message is an ACK-ACK - positive response to a CFG message.
     //logger_.debug "received AckAck message" --tags={"class": message.class-id, "message": message.message-id}
     command-cfg-latch_.set (message as ubx-message.AckAck)
 

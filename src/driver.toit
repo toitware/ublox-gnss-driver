@@ -91,7 +91,7 @@ class Driver:
     adapter_ = Adapter_ reader writer logger
 
     if auto-run:
-      // Start message receiver task and wait for it to start.
+      // Start message receiver task (and wait for it to start).
       run
 
       // Start subscription to default messages.
@@ -232,6 +232,7 @@ class Driver:
     message traffic being handled by the driver.
   */
   send-message-cfg message/ubx-message.CfgMsg:
+    yield
     command-mutex_.do:
       // Reset the latch
       command-cfg-latch_ = monitor.Latch

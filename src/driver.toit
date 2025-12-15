@@ -91,21 +91,14 @@ class Driver:
     adapter_ = Adapter_ reader writer logger
 
     if auto-run:
-      // Wait for message receiver task to start.
-      // Code moved here and now using a latch to prevent slow startup noticed
-      // in one in 30 odd tests.  (Observed time differences between 25ms
-      // to >800ms for the $run task to be running.)
-      duration := Duration.of:
-        run-latch := run
-        run-latch.get
-      logger_.debug "message receiver started" --tags={"ms": duration.in-ms}
+      // Start message receiver task and wait for it to start.
+      run
 
       // Start subscription to default messages.
       start-periodic-nav-packets_
 
       // Turn off default (unused) NMEA messages.
       disable-nmea-messages_
-
 
   time-to-first-fix -> Duration: return time-to-first-fix_
 
@@ -128,37 +121,38 @@ class Driver:
     started. This is useful to ensure the task has fully started before sending
     CFG messages that would otherwise block until a ACK/NAK was received.
   */
-  run -> monitor.Latch:
+  run -> none:
     assert: not runner_
     adapter_.flush
     start-latch := monitor.Latch
+    duration := Duration.of:
+      // Start the message parser task to parse messages as they arrive.
+      runner_ = task::
+        start-latch.set true
+        while true:
+          message := adapter_.next-message
+          //logger_.debug  "received: $message"
 
-    // Start the message parser task to parse messages as they arrive.
-    runner_ = task::
-      start-latch.set true
-      while true:
-        message := adapter_.next-message
-        //logger_.debug  "received: $message"
+          if message is ubx-message.AckAck:
+            // Message is an ACK-ACK - positive response to a CFG message.
+            process-ack-ack-message_ message as ubx-message.AckAck
 
-        if message is ubx-message.AckAck:
-          // Message is an ACK-ACK - positive response to a CFG message.
-          process-ack-ack-message_ message as ubx-message.AckAck
+          else if message is ubx-message.AckNak:
+            // Message is an ACK-NAK - negative response to a CFG message.
+            // (CFG command sent didn't work - unfortunately reasons are not given.)
+            process-ack-nak-message_ message as ubx-message.AckNak
 
-        else if message is ubx-message.AckNak:
-          // Message is an ACK-NAK - negative response to a CFG message.
-          // (CFG command sent didn't work - unfortunately reasons are not given.)
-          process-ack-nak-message_ message as ubx-message.AckNak
+          else if message is ubx-message.NavStatus:
+            process-nav-status_ message as ubx-message.NavStatus
+          else if message is ubx-message.NavPvt:
+            process-nav-pvt_ message as ubx-message.NavPvt
+          else if message is ubx-message.NavSat:
+            process-nav-sat_ message as ubx-message.NavSat
+          else:
+            logger_.debug  "driver received UNHANDLED message type: $message"
 
-        else if message is ubx-message.NavStatus:
-          process-nav-status_ message as ubx-message.NavStatus
-        else if message is ubx-message.NavPvt:
-          process-nav-pvt_ message as ubx-message.NavPvt
-        else if message is ubx-message.NavSat:
-          process-nav-sat_ message as ubx-message.NavSat
-        else:
-          logger_.debug  "driver received UNHANDLED message type: $message"
-
-    return start-latch
+    start-latch.get
+    logger_.debug "message receiver started" --tags={"ms": duration.in-ms}
 
   reset:
     adapter_.reset

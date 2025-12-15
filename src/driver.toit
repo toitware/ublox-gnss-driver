@@ -240,10 +240,10 @@ class Driver:
       command-cfg-latch_ = null
 
       if response is ubx-message.AckAck:
-        logger_.debug  "message reponse." --tags={"response": "$(response)", "ms": duration.in-ms}
+        logger_.debug  "message reponse" --tags={"response": "$(response)", "ms": duration.in-ms}
 
       if response is ubx-message.AckNak:
-        logger_.error  "**NEGATIVE** acknowledgement." --tags={"response": "$(response)", "ms": duration.in-ms}
+        logger_.error  "**NEGATIVE** acknowledgement" --tags={"response": "$(response)", "ms": duration.in-ms}
 
   /**
   Disables all default NMEA messages.

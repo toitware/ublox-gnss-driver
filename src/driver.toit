@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Toitware ApS. All rights reserved.
+// Copyright (C) 2025 Toit Contributors. All rights reserved.
 // Use of this source code is governed by a MIT-style license that can be found
 // in the LICENSE file.
 
@@ -27,13 +27,36 @@ class Driver:
 
   static QUALITY-SAT-COUNT_ ::= 4
 
+  // NMEA Helpers while a protocol specific parser doesn't exist.
+  // See $disable-nmea-messages_.
+  static NMEA-CLASS-ID_ := 0xF0
+  static NMEA-MESSAGE-IDS_ := {
+    "GGA": 0x00,
+    "GLL": 0x01,
+    "GSA": 0x02,
+    "GSV": 0x03,
+    "RMC": 0x04,
+    "VTG": 0x05,
+    "GRS": 0x06,
+    "GST": 0x07,
+    "ZDA": 0x08,
+    "GBS": 0x09,
+    "DTM": 0x0A,
+  }
+
   time-to-first-fix_ /Duration := Duration.ZERO
+
+  // Latches/Mutexes for managing and acknowledging commands
   waiters_ := []
+  command-mutex_ := monitor.Mutex      // Used to ensure one command at once.
+  command-poll-latch_ := monitor.Latch // Used to ensure poll mutex gets the result.
+  command-cfg-latch_ := monitor.Latch  // Used to ensure cfg mutex gets the result.
 
   diagnostics_ /Diagnostics := Diagnostics --known-satellites=0 --satellites-in-view=0 --signal-quality=0.0 --time-to-first-fix=Duration.ZERO
   location_ /GnssLocation? := null
   adapter_ /Adapter_
   runner_ /Task? := null
+  logger_/log.Logger := ?
 
   /**
   Creates a new driver object.
@@ -47,8 +70,18 @@ class Driver:
     supported for backwards compatibility. Support for "old-style" writers is
     deprecated and will be removed in a future release.
   Use $Writer to create an $io.Writer from a $serial.Device.
+
+  When starting the driver with defaults, the driver subscribes to the messages
+    required to find location and time.  For advanced users looking to prevent
+    the default operation, and create subscriptions/messge handlers, etc,
+    themselves, specify `--no-auto-run` on the constructor.  In this case,
+    users must set required configurations (via $send-message-cfg), subscribe
+    to desired message types (via $send-set-message-rate), and then start
+    the message receiver task ($run) manually.
   */
   constructor reader writer logger=log.default --auto-run/bool=true:
+    logger_ = logger.with-name "ublox-gnss"
+
     if reader is old-reader.Reader:
       reader = io.Reader.adapt reader
 
@@ -57,7 +90,15 @@ class Driver:
 
     adapter_ = Adapter_ reader writer logger
 
-    if auto-run: task --background:: run
+    if auto-run:
+      // Start message receiver task (and wait for it to start).
+      run
+
+      // Start subscription to default messages.
+      start-periodic-nav-packets_
+
+      // Turn off default (unused) NMEA messages.
+      disable-nmea-messages_
 
   time-to-first-fix -> Duration: return time-to-first-fix_
 
@@ -71,19 +112,42 @@ class Driver:
     waiters_.add latch
     return latch.get
 
-  run:
+
+  /**
+  Starts the message receiver task.
+
+  The $run command returns only when the task has started.  This ensures the
+    message receiver is ready before any messages are sent that would otherwise
+    cause code to block permanently without the corresponding ACK/NAK being
+    received.
+  */
+  run -> none:
     assert: not runner_
     adapter_.flush
-    start-periodic-nav-packets_
-    runner_ = task::
-      while true:
-        message := adapter_.next-message
-        if message is ubx-message.NavStatus:
-          process-nav-status_ message as ubx-message.NavStatus
-        else if message is ubx-message.NavPvt:
-          process-nav-pvt_ message as ubx-message.NavPvt
-        else if message is ubx-message.NavSat:
-          process-nav-sat_ message as ubx-message.NavSat
+    start-latch := monitor.Latch
+    duration := Duration.of:
+      // Start the message parser task to parse messages as they arrive.
+      runner_ = task::
+        start-latch.set true
+        while true:
+          message := adapter_.next-message
+
+          if message is ubx-message.AckAck:
+            process-ack-ack-message_ message as ubx-message.AckAck
+          else if message is ubx-message.AckNak:
+            process-ack-nak-message_ message as ubx-message.AckNak
+
+          else if message is ubx-message.NavStatus:
+            process-nav-status_ message as ubx-message.NavStatus
+          else if message is ubx-message.NavPvt:
+            process-nav-pvt_ message as ubx-message.NavPvt
+          else if message is ubx-message.NavSat:
+            process-nav-sat_ message as ubx-message.NavSat
+          else:
+            logger_.debug "driver received UNHANDLED message type" --tags={"message": message}
+
+    start-latch.get
+    logger_.debug "message receiver started" --tags={"ms": duration.in-ms}
 
   reset:
     adapter_.reset
@@ -93,9 +157,18 @@ class Driver:
       runner_.cancel
       runner_ = null
 
-  process-nav-status_ message/ubx-message.NavStatus:
-    if time-to-first-fix_.in-ns != 0: return
+  process-ack-nak-message_ message/ubx-message.AckNak:
+    // Message is an ACK-NAK - negative response to a CFG message.
+    // (CFG command sent didn't work - unfortunately reasons are not given.)
+    command-cfg-latch_.set (message as ubx-message.AckNak)
 
+  process-ack-ack-message_ message/ubx-message.AckAck:
+    // Message is an ACK-ACK - positive response to a CFG message.
+    command-cfg-latch_.set (message as ubx-message.AckAck)
+
+  process-nav-status_ message/ubx-message.NavStatus:
+    logger_.debug "received NavStatus message"
+    if time-to-first-fix_.in-ns != 0: return
     time-to-first-fix_ = Duration --ms=message.time-to-first-fix
 
   process-nav-pvt_ message/ubx-message.NavPvt:
@@ -133,12 +206,67 @@ class Driver:
         --known-satellites=known-satellites
 
   start-periodic-nav-packets_:
-    set-message-rate_ ubx-message.Message.NAV ubx-message.NavStatus.ID 1
-    set-message-rate_ ubx-message.Message.NAV ubx-message.NavPvt.ID 1
-    set-message-rate_ ubx-message.Message.NAV ubx-message.NavSat.ID 1
+    send-set-message-rate ubx-message.Message.NAV ubx-message.NavStatus.ID 1
+    send-set-message-rate ubx-message.Message.NAV ubx-message.NavPvt.ID 1
+    send-set-message-rate ubx-message.Message.NAV ubx-message.NavSat.ID 1
 
-  set-message-rate_ class-id message-id rate:
-    adapter_.send-packet (ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate).to-byte-array
+  /**
+  Sends a subscription for given $message-id, and $rate.
+
+  Sends a UBX-CFG message asking for the specified $class-id/$message-id
+    message type to be sent at the given $rate.
+  */
+  send-set-message-rate class-id message-id rate:
+    logger_.debug "set message rate" --tags={"class": class-id, "message": message-id, "rate": rate}
+    message := ubx-message.CfgMsg.message-rate --msg-class=class-id --msg-id=message-id --rate=rate
+    send-message-cfg message
+
+  /**
+  Sends various types of CFG messages, and waits for the response.
+
+  Handles logic of success and failure messages, while not blocking other
+    message traffic being handled by the driver.
+  */
+  send-message-cfg message/ubx-message.CfgMsg:
+    yield
+    command-mutex_.do:
+      // Reset the latch
+      command-cfg-latch_ = monitor.Latch
+
+      response := message       // Avoiding 'must be initialised on first use'.
+      duration := Duration.of:
+        adapter_.send-packet message.to-byte-array
+        response = command-cfg-latch_.get
+      command-cfg-latch_ = null
+
+      if response is ubx-message.AckAck:
+        logger_.debug  "message reponse" --tags={"response": "$(response)", "ms": duration.in-ms}
+
+      if response is ubx-message.AckNak:
+        logger_.error  "**NEGATIVE** acknowledgement" --tags={"response": "$(response)", "ms": duration.in-ms}
+
+  /**
+  Disables all default NMEA messages.
+
+  When a Ublox device is turned on, several NMEA messages arrive by default.
+    This command iterates through the set of known default messages and sets the
+    rate for each to zero, and for all outputs.  Done this way until enough of
+    an NMEA Parser is completed to make this useful.  Note: UBX-CFG-MSG is a
+    legacy method.  Currently supported by later devices but could/should use
+    UBX-CFG-VALSET at some later point.  This function uses Per-Port method
+    because some outputs still send on all ports.  This function does NOT SAVE
+    this configuration to the device.
+
+  This is necessary to quieten the uart as much as possible, increasing
+    accuracy for things like time synchronisation.
+  */
+  disable-nmea-messages_ -> none:
+    // Bytearray gives zero rate for all outputs.
+    rates := #[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    logger_.debug "disabling default NMEA messages"
+    NMEA-MESSAGE-IDS_.values.do:
+      message := ubx-message.CfgMsg.per-port --msg-class=NMEA-CLASS-ID_ --msg-id=it --rates=rates
+      send-message-cfg message
 
 class Adapter_:
   static STREAM-DELAY_ ::= Duration --ms=1

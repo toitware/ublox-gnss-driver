@@ -10,5 +10,4 @@ dependencies:
     url: github.com/toitware/toit-location
     version: ^1.1.0
   ubx-message:
-    url: github.com/toitware/ubx-message
-    version: ^2.3.0
+    path: ../ubx-message

@@ -2,5 +2,4 @@ dependencies:
   ublox_gnss:
     path: ../
   ubx-message:
-    url: github.com/toitware/ubx-message
-    version: ^2.3.0
+    path: ../../ubx-message

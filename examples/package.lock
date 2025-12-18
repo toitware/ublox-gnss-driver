@@ -1,4 +1,3 @@
-sdk: ^2.0.0-alpha.144
 prefixes:
   ublox_gnss: ..
   ubx-message: ubx-message
@@ -22,7 +21,4 @@ packages:
     version: 1.2.1
     hash: 4b82655456045e46b0e730581615ec8e6d287f1d
   ubx-message:
-    url: github.com/toitware/ubx-message
-    name: ubx-message
-    version: 2.3.0
-    hash: cef0fe251869170860cc50c0a73177f532465e9f
+    path: ../../ubx-message

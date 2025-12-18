@@ -50,7 +50,7 @@ main:
     fixtype := ""
 
     if (driver.latest-message.contains "STATUS") and (driver.latest-message["STATUS"] != null):
-      fixtype = "Fix: $(driver.latest-message["STATUS"].gps-fix-text)"
+      fixtype = "Fix: 0x$(%02x driver.latest-message["STATUS"].gps-fix)"
 
     print " $time \t $fixtype $known $sats-iv $sig-q $ttff"
     if driver.location:

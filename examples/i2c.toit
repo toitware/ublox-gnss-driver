@@ -2,13 +2,12 @@
 // Use of this source code is governed by a MIT-style license that can be found
 // in the LICENSE file.
 
-import gpio
 import i2c
 
 import ublox_gnss
 
-SDA ::= gpio.Pin 21
-SCL ::= gpio.Pin 22
+SDA ::= 21
+SCL ::= 22
 
 main:
   bus := i2c.Bus --sda=SDA --scl=SCL

@@ -2,15 +2,14 @@
 // Use of this source code is governed by a MIT-style license that can be found
 // in the LICENSE file.
 
-import gpio
 import i2c
 import uart
 import io
 
 import ublox-gnss
 
-TX-PIN := gpio.Pin 17
-RX-PIN := gpio.Pin 18
+TX-PIN := 17
+RX-PIN := 18
 BAUD   := 9600
 UART   := 0
 
